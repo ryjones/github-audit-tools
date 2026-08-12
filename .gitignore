@@ -1,0 +1,10 @@
+# Generated reports (-O output)
+reports/
+*.partial.*
+
+# Ad-hoc report files at the repo root
+advisories.csv
+advisories.md
+advisories.json
+
+.DS_Store
