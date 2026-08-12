@@ -44,6 +44,8 @@ INCLUDE_ARCHIVED=0   # -a: include archived repos in the repo section
 PVR_JOBS=8           # parallel PVR probes
 OUTFILE=""           # -O: write the report here instead of stdout
 FORCE=0              # -F: allow -O to overwrite an existing file
+MD_PLAIN=0           # -P: pure pipe tables in -f md (no HTML/CSS)
+MD_WIDTH=90          # -w: summary/description truncation width for -P
 typeset -a ORGS
 ORGS=()
 
@@ -65,12 +67,14 @@ Usage: $SCRIPT_NAME [options]
   -j N       parallel PVR probes (default: $PVR_JOBS)
   -O FILE    write the report to FILE instead of stdout ("-" means stdout)
   -F         allow -O to overwrite an existing file
+  -P         with -f md, emit pure pipe tables instead of full-width HTML ones
+  -w N       with -P, truncate summary/description to N chars (default: $MD_WIDTH)
   -h         this help
 EOF
   exit "${1:-0}"
 }
 
-while getopts ":e:o:s:f:j:O:cRDAaFh" opt; do
+while getopts ":e:o:s:f:j:O:w:cRDAaFPh" opt; do
   case $opt in
     e) ENTERPRISE=$OPTARG ;;
     o) ORGS+=("$OPTARG") ;;
@@ -84,6 +88,8 @@ while getopts ":e:o:s:f:j:O:cRDAaFh" opt; do
     a) INCLUDE_ARCHIVED=1 ;;
     O) OUTFILE=$OPTARG ;;
     F) FORCE=1 ;;
+    P) MD_PLAIN=1 ;;
+    w) MD_WIDTH=$OPTARG ;;
     h) usage 0 ;;
     :) print -u2 "error: -$OPTARG requires an argument"; usage 1 ;;
     \?) print -u2 "error: unknown option -$OPTARG"; usage 1 ;;
@@ -99,6 +105,7 @@ case $FORMAT in
   *) print -u2 "error: bad -f format: $FORMAT"; usage 1 ;;
 esac
 [[ $PVR_JOBS == <-> ]] && (( PVR_JOBS >= 1 )) || { print -u2 "error: -j wants a positive integer"; usage 1 }
+[[ $MD_WIDTH == <-> ]] && (( MD_WIDTH >= 10 )) || { print -u2 "error: -w wants an integer >= 10"; usage 1 }
 (( NO_ADVISORIES && ! REPO_POSTURE )) && { print -u2 "error: -A leaves nothing to do without -R"; usage 1 }
 (( DISABLED_ONLY && ! REPO_POSTURE )) && { print -u2 "error: -D only applies with -R"; usage 1 }
 if [[ $FORMAT == ghsa ]] && (( REPO_POSTURE )); then
@@ -182,6 +189,8 @@ for org in $ORGS_FOR_ADVISORIES; do
                      // null),
         ghsa_id:    .ghsa_id,
         cve_id:     .cve_id,
+        # MITRE CVE Program record; the old cve.mitre.org CGI 301s here.
+        cve_url:    (if .cve_id then "https://www.cve.org/CVERecord?id=" + .cve_id else null end),
         # GitHub auto-creates a private fork per draft advisory; -R filters these out.
         private_fork: (.private_fork.full_name // null),
         severity:   (.severity // "unknown"),
@@ -232,7 +241,9 @@ if (( REPO_POSTURE )); then
     repo_list+=$(print -r -- "$raw" | jq -r --argjson keep_arch "$INCLUDE_ARCHIVED" '
       (if length > 0 and (.[0]|type) == "array" then add else . end) // []
       | map(select($keep_arch == 1 or .archived == false))
-      | .[] | [.full_name, (.archived|tostring), (.fork|tostring), (.visibility // "unknown")]
+      | .[] | [.full_name, (.archived|tostring), (.fork|tostring), (.visibility // "unknown"),
+               # flatten whitespace: this rides through a tab-separated read loop
+               ((.description // "") | gsub("[\t\r\n]"; " "))]
       | @tsv')
     repo_list+=$'\n'
   done
@@ -243,8 +254,8 @@ if (( REPO_POSTURE )); then
 
   # 2. probe PVR, PVR_JOBS at a time (one REST call per repo; no bulk endpoint exists)
   typeset -i n=0
-  typeset full arch frk vis
-  while IFS=$'\t' read -r full arch frk vis; do
+  typeset full arch frk vis desc
+  while IFS=$'\t' read -r full arch frk vis desc; do
     [[ -n $full ]] || continue
     (( ++n ))
     (
@@ -259,9 +270,10 @@ if (( REPO_POSTURE )); then
         enabled="unknown"   # usually: not a repo admin
       fi
       jq -n -c --arg repo "$full" --arg pvr "$enabled" --arg arch "$arch" \
-              --arg fork "$frk" --arg vis "$vis" '{
+              --arg fork "$frk" --arg vis "$vis" --arg desc "$desc" '{
         org: ($repo|split("/")[0]), repo: $repo, name: ($repo|split("/")[1]),
-        pvr: $pvr, archived: ($arch == "true"), fork: ($fork == "true"), visibility: $vis
+        pvr: $pvr, archived: ($arch == "true"), fork: ($fork == "true"),
+        visibility: $vis, description: $desc
       }'
     ) > "$tmpd/$n.json" &
     (( n % PVR_JOBS == 0 )) && { wait || true }
@@ -296,8 +308,8 @@ render_advisories() {
 
     csv)
       print -r -- "$all_json" | jq -r '
-        (["org","repo","ghsa_id","cve_id","severity","cvss","state","published","cwe_ids","packages","summary","url"]),
-        (.[] | [ .org, (.repo // ""), .ghsa_id, (.cve_id // ""), .severity,
+        (["org","repo","ghsa_id","cve_id","cve_url","severity","cvss","state","published","cwe_ids","packages","summary","url"]),
+        (.[] | [ .org, (.repo // ""), .ghsa_id, (.cve_id // ""), (.cve_url // ""), .severity,
                  (.cvss_score // ""|tostring), .state, .published,
                  (.cwe_ids|join(" ")), (.packages|join(" ")), .summary, .html_url ])
         | @csv'
@@ -313,17 +325,52 @@ render_advisories() {
       ;;
 
     md)
-      print -r -- "$all_json" | jq -r '
-        # escape pipes so a summary containing "|" cannot break the table
-        def cell: (. // "-") | tostring | gsub("\\|"; "\\\\|") | gsub("\n"; " ");
-        "## Security advisories",
-        "",
-        "| Org | Repo | GHSA | CVE | Severity | State | Published | Summary |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
-        (.[] | "| \(.org|cell) | \((.repo // "-")|sub("^[^/]+/";"")|cell) " +
-               "| [\(.ghsa_id)](\(.html_url)) | \(.cve_id|cell) | \(.severity|cell) " +
-               "| \(.state|cell) | \(if .published == "" then "-" else .published end|cell) " +
-               "| \(.summary|cell) |")'
+      if (( MD_PLAIN )); then
+        # Pure pipe table. Sizes to content, so the summary is truncated to keep
+        # the table inside a rendering area that cannot be widened (e.g. GitHub).
+        print -r -- "$all_json" | jq -r --argjson w "$MD_WIDTH" '
+          # escape pipes so a summary containing "|" cannot break the table
+          def cell: (. // "-") | tostring | gsub("\\|"; "\\\\|") | gsub("\n"; " ");
+          def trunc($n): if (.|length) > $n then (.[0:$n-1] + "…") else . end;
+          "## Security advisories",
+          "",
+          "| Org | Repo | GHSA | CVE | Severity | State | Published | Summary |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- |",
+          (.[] | "| \(.org|cell) | \((.repo // "-")|sub("^[^/]+/";"")|cell) " +
+                 "| [\(.ghsa_id)](\(.html_url)) " +
+                 "| \(if .cve_id then "[\(.cve_id)](\(.cve_url))" else "-" end) | \(.severity|cell) " +
+                 "| \(.state|cell) | \(if .published == "" then "-" else .published end|cell) " +
+                 "| \((.summary|cell)|trunc($w)) |")'
+      else
+        # HTML table: table-layout:fixed + colgroup percentages make it span the
+        # full rendering width and wrap the summary instead of overflowing.
+        # Renderers that strip style (GitHub) still get a valid, readable table.
+        print -r -- "$all_json" | jq -r '
+          "## Security advisories",
+          "",
+          "<table class=\"ghsa\">",
+          "<colgroup>" +
+            "<col style=\"width:11%\"><col style=\"width:11%\"><col style=\"width:15%\">" +
+            "<col style=\"width:12%\"><col style=\"width:7%\"><col style=\"width:8%\">" +
+            "<col style=\"width:9%\"><col style=\"width:27%\"></colgroup>",
+          "<thead><tr>" +
+            ([ "Org","Repo","GHSA","CVE","Severity","State","Published","Summary" ]
+             | map("<th>\(.)</th>") | join("")) +
+            "</tr></thead>",
+          "<tbody>",
+          (.[] | "<tr>" +
+             "<td>\(.org|@html)</td>" +
+             "<td>\((.repo // "-")|sub("^[^/]+/";"")|@html)</td>" +
+             "<td><a href=\"\(.html_url)\"><code>\(.ghsa_id|@html)</code></a></td>" +
+             "<td>\(if .cve_id then "<a href=\"\(.cve_url)\"><code>\(.cve_id|@html)</code></a>" else "–" end)</td>" +
+             "<td class=\"sev-\(.severity)\">\(.severity|@html)</td>" +
+             "<td>\(.state|@html)</td>" +
+             "<td>\(if .published == "" then "–" else (.published|@html) end)</td>" +
+             "<td>\(.summary|@html)</td>" +
+             "</tr>"),
+          "</tbody>",
+          "</table>"'
+      fi
       ;;
 
     table)
@@ -362,15 +409,44 @@ render_repos() {
       ;;
 
     md)
-      print -r -- "$repos_json" | jq -r '
-        "## Private vulnerability reporting",
-        "",
-        "| Org | Repo | PVR | Advisories | Visibility | Archived |",
-        "| --- | --- | --- | --- | --- | --- |",
-        (.[] | "| \(.org) | [\(.name)](https://github.com/\(.repo)) " +
-               "| \(if .pvr == "disabled" then "**disabled**" elif .pvr == "enabled" then "enabled" elif .pvr == "n/a" then "n/a _(private)_" else "unknown" end) " +
-               "| \(if .advisories == 0 then "–" else (.advisories|tostring) end) " +
-               "| \(.visibility) | \(if .archived then "yes" else "–" end) |")'
+      if (( MD_PLAIN )); then
+        print -r -- "$repos_json" | jq -r --argjson w "$MD_WIDTH" '
+          def cell: (. // "") | tostring | gsub("\\|"; "\\\\|") | gsub("\n"; " ");
+          def trunc($n): if (.|length) > $n then (.[0:$n-1] + "…") else . end;
+          "## Private vulnerability reporting",
+          "",
+          "| Org | Repo | PVR | Advisories | Visibility | Description |",
+          "| --- | --- | --- | --- | --- | --- |",
+          (.[] | "| \(.org) | [\(.name)](https://github.com/\(.repo)) " +
+                 "| \(if .pvr == "disabled" then "**disabled**" elif .pvr == "enabled" then "enabled" elif .pvr == "n/a" then "n/a _(private)_" else "unknown" end) " +
+                 "| \(if .advisories == 0 then "–" else (.advisories|tostring) end) " +
+                 "| \(.visibility) | \((.description|cell)|trunc($w) | if . == "" then "–" else . end) |")'
+      else
+        # The description column is what gives this table enough content to fill
+        # the width; without it the cells are short and it renders as a stub.
+        print -r -- "$repos_json" | jq -r '
+          "## Private vulnerability reporting",
+          "",
+          "<table class=\"ghsa\">",
+          "<colgroup>" +
+            "<col style=\"width:14%\"><col style=\"width:18%\"><col style=\"width:11%\">" +
+            "<col style=\"width:9%\"><col style=\"width:10%\"><col style=\"width:38%\"></colgroup>",
+          "<thead><tr>" +
+            ([ "Org","Repo","PVR","Advisories","Visibility","Description" ]
+             | map("<th>\(.)</th>") | join("")) +
+            "</tr></thead>",
+          "<tbody>",
+          (.[] | "<tr>" +
+             "<td>\(.org|@html)</td>" +
+             "<td><a href=\"https://github.com/\(.repo)\">\(.name|@html)</a></td>" +
+             "<td>\(if .pvr == "disabled" then "<span class=\"pvr-off\">disabled</span>" elif .pvr == "enabled" then "enabled" elif .pvr == "n/a" then "n/a <em>(private)</em>" else "unknown" end)</td>" +
+             "<td>\(if .advisories == 0 then "–" else (.advisories|tostring) end)</td>" +
+             "<td>\(.visibility|@html)</td>" +
+             "<td>\(if (.description // "") == "" then "–" else (.description|@html) end)</td>" +
+             "</tr>"),
+          "</tbody>",
+          "</table>"'
+      fi
       ;;
 
     table)
@@ -389,7 +465,30 @@ render_repos() {
   esac
 }
 
+# Emitted once per -f md report (unless -P). Renderers that run a real WebView
+# (MacDown, VS Code, most docs sites) apply this and the tables span the full
+# width; renderers that strip <style> (GitHub) just get plain tables.
+md_stylesheet() {
+  cat <<'CSS'
+<style>
+table.ghsa { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 90%; margin: 0 0 1em; }
+table.ghsa th, table.ghsa td { padding: 6px 8px; text-align: left; vertical-align: top;
+  overflow-wrap: anywhere; border-bottom: 1px solid rgba(128,128,128,.25); }
+table.ghsa thead th { border-bottom: 2px solid rgba(128,128,128,.5); font-weight: 600; }
+table.ghsa tbody tr:nth-child(even) { background: rgba(128,128,128,.06); }
+table.ghsa code { font-size: 92%; white-space: nowrap; }
+.pvr-off { font-weight: 700; }
+.sev-critical, .sev-high { font-weight: 600; }
+</style>
+CSS
+}
+
 emit_report() {
+if [[ $FORMAT == md ]] && (( ! MD_PLAIN )); then
+  md_stylesheet
+  print ""
+fi
+
 if [[ $FORMAT == json ]]; then
   # -R changes the shape to an object; without it the output stays a bare array.
   if (( REPO_POSTURE )); then
@@ -414,7 +513,7 @@ else
         "",
         "- by state: \(reduce .[] as $a ({}; .[$a.state] += 1) | to_entries | map("\(.key) \(.value)") | join(", ") | if . == "" then "–" else . end)",
         "- by severity: \(reduce .[] as $a ({}; .[$a.severity] += 1) | to_entries | map("\(.key) \(.value)") | join(", ") | if . == "" then "–" else . end)",
-        "- CVEs: \([.[].cve_id|select(.)]|unique|map("`\(.)`")|join(", ") | if . == "" then "–" else . end)"'
+        "- CVEs: \([.[]|select(.cve_id)|{id:.cve_id,url:.cve_url}]|unique_by(.id)|map("[`\(.id)`](\(.url))")|join(", ") | if . == "" then "–" else . end)"'
     elif [[ $FORMAT == table || $FORMAT == tsv ]]; then
       print -r -- "$all_json" | jq -r '
         "\n── advisory totals ────────────────────────────────",
