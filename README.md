@@ -16,6 +16,7 @@ Everything here reads GitHub rather than changing it, with one exception
 | `gh-org-members` | Every person in an enterprise, the organizations they belong to, and the teams they sit on | [docs](docs/gh-org-members.md) |
 | `gh-org-reports` | The gaps in a people export: organization members on no team, enterprise members in no organization | [docs](docs/gh-org-members.md#reports) |
 | `gh-actions-storage` | Which repositories hold the most live Actions artifact storage, and purging the old ones | [docs](docs/gh-actions-storage.md) |
+| `clowarden-drift` | Where an organization's declared access (its CLOWarden config) and its real access disagree, one record per disagreement | [docs](docs/gh-org-members.md#reconciling-against-github) |
 | `gh-enterprise-ghsa.zsh` | Every security advisory across an enterprise's organizations, with CVEs, and which repositories have private vulnerability reporting off | [docs](docs/gh-enterprise-ghsa.md) |
 
 And the scripts that build on their output:
@@ -27,7 +28,6 @@ And the scripts that build on their output:
 | `drift.zsh` | Compares one organization's export with the CLOWarden `config.yaml` meant to describe it |
 | `mirror-clowarden.zsh` | Clones, or fetches, every CLOWarden config repository into `mirror/<org>/<repo>` |
 | `clowarden-history.py` | Derives team membership history from the git history of those configs — years, where the audit log serves about 180 days |
-| `clowarden-drift.py` | Reconciles the configs against a people export and reports every disagreement |
 | `fetch-audit-history.zsh` | Pulls each login's org and team membership history out of the enterprise audit log |
 
 ## Build
@@ -43,8 +43,8 @@ make check           # fmt, clippy, the tests, and a syntax pass over the script
 you would rather.
 
 The scripts need no build, only `zsh`, [`gh`](https://cli.github.com), `jq`,
-`yq` and `python3` — `tac-eligibility.py` and the `clowarden-*.py` scripts use
-the standard library only.
+`yq` and `python3` — `tac-eligibility.py` and `clowarden-history.py` use the
+standard library only.
 
 ## Authentication
 

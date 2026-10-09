@@ -429,7 +429,7 @@ report is unanswerable.
 
 ## Scripts
 
-Four helpers sit beside the binaries. None of them is required to use the
+Three helpers sit beside the binaries. None of them is required to use the
 tools; each captures a job that came up often enough to be worth keeping.
 [docs/clowarden-reconciliation.md](clowarden-reconciliation.md) runs them all
 end to end.
@@ -439,7 +439,6 @@ end to end.
 | `fetch-audit-history.zsh` | Walks a login list and pulls each login's org and team membership history out of the enterprise audit log, as the target of an action and as the actor, into one CSV per login plus the raw JSON behind it. Needs `read:audit_log`. |
 | `mirror-clowarden.zsh` | Clones (or fetches, when already present) the CLOWarden config repositories into `mirror/<org>/<repo>`. Safe to re-run; an existing checkout is fetched rather than re-cloned. |
 | `clowarden-history.py` | Derives team membership history from the git history of those mirrored configs. No API calls. |
-| `clowarden-drift.py` | Reconciles the current configs against an export and reports every disagreement. No API calls. |
 
 CLOWarden applies a YAML file in each organization's governance repository, so
 that file's git history *is* the organization's membership history — and it
@@ -473,11 +472,13 @@ schema, and a revision that will not parse is skipped rather than guessed at.
 
 YAML is parsed by shelling out to `yq`, so no Python YAML module is needed.
 
+### Reconciling against GitHub
+
 What these reports describe is what the config *said*, which is not always what
-GitHub shows. `clowarden-drift.py` names the disagreements:
+GitHub shows. The `clowarden-drift` binary names the disagreements:
 
 ```sh
-./clowarden-drift.py --people results/people.yaml --out reports
+./target/release/clowarden-drift --people results/people.yaml --out reports
 ```
 
 It writes `reports/drift.csv` and `reports/drift.json`, one record per

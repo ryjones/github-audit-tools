@@ -10,8 +10,13 @@
 //!   `gh-org-reports`).
 //! - `storage_*` — Actions artifact storage (`gh-actions-storage`), which
 //!   carries its own client because it also speaks REST.
+//! - `clowarden*`, `tac_*` — the CLOWarden configs, and the TAC election
+//!   eligibility phases that read them.
 
 pub mod client;
+
+pub mod clowarden;
+pub mod clowarden_drift;
 
 pub mod repos_collect;
 pub mod repos_model;

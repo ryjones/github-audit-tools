@@ -24,8 +24,8 @@ expected values.
 | `gh-enterprise-repos` | Every repository, by visibility and archived state |
 | `fetch-audit-history.zsh` | What the audit log says happened to a login (~180 days) |
 | `mirror-clowarden.zsh` | Local clones of every CLOWarden config repo |
+| `clowarden-drift` | Where declared access and real access disagree |
 | `clowarden-history.py` | Membership history from config git history (years, not months) |
-| `clowarden-drift.py` | Where declared access and real access disagree |
 
 All of it lives in this repository, so every command below runs from the
 repository root.
@@ -227,7 +227,7 @@ about 1,600 requests, which is why `--audit-select` exists.
 ## 8. Reconcile
 
 ```sh
-./clowarden-drift.py --people results/people.yaml --out reports
+./target/release/clowarden-drift --people results/people.yaml --out reports
 ```
 
 `reports/drift.csv` and `drift.json`, one record per disagreement, in four
