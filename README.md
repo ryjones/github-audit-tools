@@ -33,13 +33,18 @@ And the scripts that build on their output:
 ## Build
 
 ```sh
-cargo build --release          # all four binaries
+make                 # all four binaries, debug, into target/debug
+make release         # optimized, into target/release
+make check           # fmt, clippy, the tests, and a syntax pass over the scripts
 ./target/release/gh-org-members --help
 ```
 
-The scripts need `zsh`, [`gh`](https://cli.github.com), `jq`, `yq` and
-`python3` — `tac-eligibility.py` and the `clowarden-*.py` scripts use the
-standard library only.
+`make help` lists the targets; `cargo build [--release]` does the same job if
+you would rather.
+
+The scripts need no build, only `zsh`, [`gh`](https://cli.github.com), `jq`,
+`yq` and `python3` — `tac-eligibility.py` and the `clowarden-*.py` scripts use
+the standard library only.
 
 ## Authentication
 
@@ -85,6 +90,7 @@ every example in the docs is invented for that reason.
 ## Layout
 
 ```
+Makefile              make, make release, make check
 Cargo.toml            one package, four binaries
 src/
   client.rs           the GraphQL client gh-enterprise-repos and
