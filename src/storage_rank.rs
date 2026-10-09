@@ -41,11 +41,7 @@ pub struct RepoStat {
 
 impl RepoStat {
     fn mark(&self) -> &'static str {
-        if self.estimated {
-            "~"
-        } else {
-            " "
-        }
+        if self.estimated { "~" } else { " " }
     }
 }
 
@@ -66,9 +62,13 @@ pub async fn run(client: &GhClient, opts: RankOptions) -> Result<()> {
         .unwrap_or_default();
     let results = Results::new(&opts.results_dir, "rank", &scope)?;
 
-    let targets =
-        discover::resolve_targets(client, opts.enterprise.as_deref(), opts.org.as_deref(), None)
-            .await?;
+    let targets = discover::resolve_targets(
+        client,
+        opts.enterprise.as_deref(),
+        opts.org.as_deref(),
+        None,
+    )
+    .await?;
 
     // The scan log is echoed to stderr as it happens and kept for the report,
     // so a long scan's progress survives in the results file too.
@@ -78,9 +78,11 @@ pub async fn run(client: &GhClient, opts: RankOptions) -> Result<()> {
     for (org, repos) in targets {
         eprintln!("org: {org}");
         scan_log.push(format!("org: {org}"));
-        let measured = stream::iter(repos.into_iter().map(|repo| async move {
-            measure_repo(client, &repo).await
-        }))
+        let measured = stream::iter(
+            repos
+                .into_iter()
+                .map(|repo| async move { measure_repo(client, &repo).await }),
+        )
         .buffer_unordered(opts.concurrency.max(1))
         .collect::<Vec<_>>()
         .await;

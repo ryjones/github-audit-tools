@@ -6,8 +6,8 @@
 //!
 //! Artifacts themselves are not part of the GraphQL schema; see `artifacts`.
 
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 
 use crate::storage_client::GhClient;
 use crate::storage_util::parse_repo;
@@ -215,10 +215,7 @@ fn nodes(connection: &Value) -> &[Value] {
 fn next_cursor(connection: &Value) -> Option<String> {
     let page_info = connection.get("pageInfo")?;
     if page_info.get("hasNextPage")?.as_bool()? {
-        page_info
-            .get("endCursor")?
-            .as_str()
-            .map(str::to_string)
+        page_info.get("endCursor")?.as_str().map(str::to_string)
     } else {
         None
     }

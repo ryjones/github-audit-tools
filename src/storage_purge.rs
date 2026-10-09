@@ -123,7 +123,11 @@ pub async fn run(client: &GhClient, opts: PurgeOptions) -> Result<()> {
 
     let summary = format!(
         "{} {} artifact(s), reclaiming {:.2} GB",
-        if opts.apply { "Deleted" } else { "Would delete" },
+        if opts.apply {
+            "Deleted"
+        } else {
+            "Would delete"
+        },
         total_count - failed,
         gib(total_bytes),
     );

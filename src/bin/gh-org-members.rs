@@ -8,9 +8,11 @@ use clap::Parser;
 use futures::stream::{self, StreamExt};
 use serde::Serialize;
 
-use github_audit_tools::members_audit::{self as audit, Cohort};
 use github_audit_tools::client::GithubClient;
-use github_audit_tools::members_collect::{Collector, EnterpriseMember, OrgSnapshot, TeamMembership};
+use github_audit_tools::members_audit::{self as audit, Cohort};
+use github_audit_tools::members_collect::{
+    Collector, EnterpriseMember, OrgSnapshot, TeamMembership,
+};
 use github_audit_tools::members_logins::{self as logins, CaseCheck, InputFormat, Resolution};
 use github_audit_tools::members_model::*;
 use github_audit_tools::members_yaml as yaml;

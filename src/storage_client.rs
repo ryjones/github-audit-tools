@@ -7,11 +7,11 @@
 //!
 //! Both share one HTTP client, one token, and one retry/rate-limit policy.
 
-use anyhow::{anyhow, bail, Context, Result};
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
+use anyhow::{Context, Result, anyhow, bail};
+use reqwest::header::{ACCEPT, AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Response, StatusCode};
 use serde::de::DeserializeOwned;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::time::sleep;
 
@@ -57,7 +57,10 @@ impl GhClient {
             .context("token is not a valid HTTP header value")?;
         auth.set_sensitive(true);
         headers.insert(AUTHORIZATION, auth);
-        headers.insert(ACCEPT, HeaderValue::from_static("application/vnd.github+json"));
+        headers.insert(
+            ACCEPT,
+            HeaderValue::from_static("application/vnd.github+json"),
+        );
         headers.insert(
             "x-github-api-version",
             HeaderValue::from_static("2022-11-28"),

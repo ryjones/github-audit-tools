@@ -61,8 +61,7 @@ pub async fn fetch_page(
     repo: &str,
     page: u64,
 ) -> Result<Option<ArtifactPage>> {
-    let path =
-        format!("/repos/{owner}/{repo}/actions/artifacts?per_page={PER_PAGE}&page={page}");
+    let path = format!("/repos/{owner}/{repo}/actions/artifacts?per_page={PER_PAGE}&page={page}");
     client.rest_get(&path).await
 }
 

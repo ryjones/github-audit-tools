@@ -17,7 +17,7 @@ use github_audit_tools::{
     storage_rank as rank,
 };
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::{Args, Parser, Subcommand};
 
 use github_audit_tools::storage_client::GhClient;
@@ -198,7 +198,10 @@ async fn main() -> Result<()> {
 
 async fn rate_limit(client: &GhClient, wait_for: Option<u64>, poll: u64) -> Result<()> {
     let Some(target) = wait_for else {
-        println!("core rate limit remaining: {}", client.core_rate_limit_remaining().await?);
+        println!(
+            "core rate limit remaining: {}",
+            client.core_rate_limit_remaining().await?
+        );
         return Ok(());
     };
     if poll == 0 {

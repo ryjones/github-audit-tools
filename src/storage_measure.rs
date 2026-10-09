@@ -29,9 +29,10 @@ pub async fn run(client: &GhClient, spec: &str, concurrency: usize) -> Result<()
 
     let pages = artifacts::page_count(total);
     if pages > 1 {
-        let rest = stream::iter((2..=pages).map(|page| async move {
-            artifacts::fetch_page(client, owner, name, page).await
-        }))
+        let rest = stream::iter(
+            (2..=pages)
+                .map(|page| async move { artifacts::fetch_page(client, owner, name, page).await }),
+        )
         .buffer_unordered(concurrency.max(1))
         .collect::<Vec<_>>()
         .await;

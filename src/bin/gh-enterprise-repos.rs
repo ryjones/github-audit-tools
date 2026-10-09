@@ -8,8 +8,8 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use futures::stream::{self, StreamExt};
 
-use github_audit_tools::client::GithubClient;
 use collect::{Archived, Collector, Filter, Forks, OrgSnapshot, Visibility};
+use github_audit_tools::client::GithubClient;
 use model::*;
 
 /// Export the repositories of every organization in a GitHub enterprise — or

@@ -1,8 +1,8 @@
 //! Small shared helpers.
 
-use anyhow::{bail, Result};
-use time::format_description::well_known::Rfc3339;
+use anyhow::{Result, bail};
 use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 
 pub const GIB: f64 = 1_073_741_824.0;
 
