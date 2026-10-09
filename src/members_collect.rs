@@ -4,8 +4,8 @@ use anyhow::{Context, Result};
 use serde_json::json;
 
 use crate::client::{GithubClient, RateState};
-use crate::logins::Resolution;
-use crate::model::*;
+use crate::members_logins::Resolution;
+use crate::members_model::*;
 
 const ENTERPRISE_ORGS: &str = r#"
 query($slug: String!, $cursor: String, $batchSize: Int!) {

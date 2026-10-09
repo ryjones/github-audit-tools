@@ -19,11 +19,11 @@ use anyhow::Result;
 use futures::stream::{self, StreamExt};
 use std::collections::BTreeMap;
 
-use crate::artifacts;
-use crate::client::GhClient;
-use crate::discover::{self, Repo};
-use crate::results::{self, Results};
-use crate::util::gib;
+use crate::storage_artifacts as artifacts;
+use crate::storage_client::GhClient;
+use crate::storage_discover::{self as discover, Repo};
+use crate::storage_results::{self as results, Results};
+use crate::storage_util::gib;
 use std::fmt::Write as _;
 
 /// Sampled storage for one repository.

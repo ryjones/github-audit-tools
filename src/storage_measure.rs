@@ -7,9 +7,9 @@
 use anyhow::Result;
 use futures::stream::{self, StreamExt};
 
-use crate::artifacts;
-use crate::client::GhClient;
-use crate::util::{gib, parse_repo};
+use crate::storage_artifacts as artifacts;
+use crate::storage_client::GhClient;
+use crate::storage_util::{gib, parse_repo};
 
 pub async fn run(client: &GhClient, spec: &str, concurrency: usize) -> Result<()> {
     let (owner, name) = parse_repo(spec)?;

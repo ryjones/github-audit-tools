@@ -551,7 +551,7 @@ teams:
         let check = check(&[given("dana")], &resolutions(&[("dana", found("dana"))]));
         assert_eq!(check.findings(), 0);
 
-        let yaml = crate::yaml::to_string(&check).expect("serializes");
+        let yaml = crate::members_yaml::to_string(&check).expect("serializes");
         let parsed: Yaml = serde_yaml_ng::from_str(&yaml).expect("parses");
         assert_eq!(parsed["totals"]["correct"].as_u64(), Some(1));
         // Empty finding lists are absent, not empty.

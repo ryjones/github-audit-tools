@@ -1,7 +1,4 @@
-mod client;
-mod collect;
-mod model;
-mod yaml;
+use github_audit_tools::{repos_collect as collect, repos_model as model, repos_yaml as yaml};
 
 use std::collections::{BTreeMap, HashSet};
 use std::io::Write;
@@ -11,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 use futures::stream::{self, StreamExt};
 
-use client::GithubClient;
+use github_audit_tools::client::GithubClient;
 use collect::{Archived, Collector, Filter, Forks, OrgSnapshot, Visibility};
 use model::*;
 

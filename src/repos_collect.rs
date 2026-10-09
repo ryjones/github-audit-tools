@@ -5,7 +5,7 @@ use clap::ValueEnum;
 use serde_json::json;
 
 use crate::client::GithubClient;
-use crate::model::*;
+use crate::repos_model::*;
 
 const ENTERPRISE_ORGS: &str = r#"
 query($slug: String!, $cursor: String, $batchSize: Int!) {

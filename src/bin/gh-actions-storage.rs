@@ -12,19 +12,15 @@
 //! Not covered: Actions cache (free, auto-evicted), GitHub Packages, and Git
 //! LFS — each has its own storage accounting.
 
-mod artifacts;
-mod client;
-mod discover;
-mod measure;
-mod purge;
-mod rank;
-mod results;
-mod util;
+use github_audit_tools::{
+    storage_client as client, storage_measure as measure, storage_purge as purge,
+    storage_rank as rank,
+};
 
 use anyhow::{bail, Result};
 use clap::{Args, Parser, Subcommand};
 
-use client::GhClient;
+use github_audit_tools::storage_client::GhClient;
 
 #[derive(Parser)]
 #[command(

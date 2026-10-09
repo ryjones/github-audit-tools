@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 
-use crate::model::{Person, Report};
+use crate::members_model::{Person, Report};
 
 /// A person who belongs to at least one organization in which they hold no team
 /// membership. Only those organizations are listed: someone on a team in one org
@@ -126,7 +126,7 @@ pub fn team_membership_available(report: &Report) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Person, PersonOrg, PersonTeam, Source, Totals};
+    use crate::members_model::{Person, PersonOrg, PersonTeam, Source, Totals};
 
     fn person(login: &str, orgs: Vec<PersonOrg>) -> Person {
         Person {

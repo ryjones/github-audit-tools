@@ -7,7 +7,7 @@
 use anyhow::Result;
 use serde::Deserialize;
 
-use crate::client::GhClient;
+use crate::storage_client::GhClient;
 
 pub const PER_PAGE: u64 = 100;
 

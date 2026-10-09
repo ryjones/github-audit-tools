@@ -9,7 +9,7 @@
 # the script is safe to re-run.
 set -uo pipefail
 
-INPUT=${1:-../gh-enterprise-repos/reports/clowarden-watched-repos.csv}
+INPUT=${1:-reports/clowarden-watched-repos.csv}
 MIRROR=${2:-mirror}
 JOBS=${3:-8}
 

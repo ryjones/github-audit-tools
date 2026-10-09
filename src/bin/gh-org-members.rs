@@ -8,12 +8,12 @@ use clap::Parser;
 use futures::stream::{self, StreamExt};
 use serde::Serialize;
 
-use gh_org_members::audit::{self, Cohort};
-use gh_org_members::client::GithubClient;
-use gh_org_members::collect::{Collector, EnterpriseMember, OrgSnapshot, TeamMembership};
-use gh_org_members::logins::{self, CaseCheck, InputFormat, Resolution};
-use gh_org_members::model::*;
-use gh_org_members::yaml;
+use github_audit_tools::members_audit::{self as audit, Cohort};
+use github_audit_tools::client::GithubClient;
+use github_audit_tools::members_collect::{Collector, EnterpriseMember, OrgSnapshot, TeamMembership};
+use github_audit_tools::members_logins::{self as logins, CaseCheck, InputFormat, Resolution};
+use github_audit_tools::members_model::*;
+use github_audit_tools::members_yaml as yaml;
 
 /// Export the people in a GitHub enterprise or organization, and the teams they
 /// belong to, as YAML.
@@ -716,7 +716,7 @@ fn person_entry<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gh_org_members::logins::GivenName;
+    use github_audit_tools::members_logins::GivenName;
 
     fn args(extra: &[&str]) -> Args {
         let mut argv = vec!["gh-org-members", "--org", "example"];

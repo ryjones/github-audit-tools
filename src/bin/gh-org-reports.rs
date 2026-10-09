@@ -8,12 +8,12 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, ValueEnum};
 use serde::Serialize;
 
-use gh_org_members::model::Report;
-use gh_org_members::reports::{
-    self, PersonWithoutOrg, PersonWithoutTeams, enterprise_membership_available,
+use github_audit_tools::members_model::Report;
+use github_audit_tools::members_reports::{
+    self as reports, PersonWithoutOrg, PersonWithoutTeams, enterprise_membership_available,
     team_membership_available,
 };
-use gh_org_members::yaml;
+use github_audit_tools::members_yaml as yaml;
 
 /// Report on the people a gh-org-members export leaves in the gaps.
 #[derive(Debug, Parser)]
@@ -212,7 +212,7 @@ fn build_output(args: &Args, input: &Path, export: &Report) -> (Output, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gh_org_members::model::{Person, PersonOrg, PersonTeam, Source, Totals};
+    use github_audit_tools::members_model::{Person, PersonOrg, PersonTeam, Source, Totals};
 
     fn args(extra: &[&str]) -> Args {
         let mut argv = vec!["gh-org-reports", "export.yaml"];

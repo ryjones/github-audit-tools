@@ -9,8 +9,8 @@ use std::collections::HashSet;
 
 use clap::ValueEnum;
 
-use crate::model::Report;
-use crate::reports;
+use crate::members_model::Report;
+use crate::members_reports as reports;
 
 /// Which people the list names.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -104,7 +104,7 @@ fn quote(field: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Person, PersonOrg, PersonTeam, Source, Totals};
+    use crate::members_model::{Person, PersonOrg, PersonTeam, Source, Totals};
 
     fn person(login: &str, name: Option<&str>, orgs: Vec<(&str, usize)>) -> Person {
         Person {

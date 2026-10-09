@@ -9,8 +9,8 @@
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
-use crate::client::GhClient;
-use crate::util::parse_repo;
+use crate::storage_client::GhClient;
+use crate::storage_util::parse_repo;
 
 const ORGS_QUERY: &str = r#"
 query($slug: String!, $cursor: String) {

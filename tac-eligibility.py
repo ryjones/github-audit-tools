@@ -51,7 +51,7 @@ import threading
 import time
 
 # CLOWarden's config is the same schema under four names (plus one typo-safe
-# variant); see the deployment notes in gh-org-members.
+# variant); see the deployment notes in docs/gh-org-members.md.
 CONFIG_NAMES = ("config.yaml", "config.yml", "teams.yml", "teams.yaml", "access-control.yaml")
 
 # "Write access or higher" in CLOWarden's vocabulary. read and triage are not it.
@@ -459,7 +459,7 @@ def clowarden_state(mirror):
 
 def phase_voters(args):
     if not args.clowarden.is_dir():
-        die(f"no CLOWarden mirror at {args.clowarden}; run gh-org-members' mirror-clowarden.zsh")
+        die(f"no CLOWarden mirror at {args.clowarden}; run ./mirror-clowarden.zsh")
     if not args.people.is_file():
         die(f"cannot read {args.people}")
 
@@ -588,7 +588,6 @@ def phase_write(args):
 
 def main():
     here = pathlib.Path(__file__).resolve().parent
-    neighbor = here.parent / "gh-org-members"
     mirror_root = here.parent.parent / "github-mirror"
 
     parse = argparse.ArgumentParser(
@@ -608,9 +607,9 @@ def main():
     parse.add_argument("--coauthors", action="store_true",
                        help="credit Co-authored-by trailers as activity too")
     parse.add_argument("--people", type=pathlib.Path,
-                       default=neighbor / "results" / "lf-decentralized-trust.gh.yaml",
+                       default=here / "results" / "lf-decentralized-trust.gh.yaml",
                        help="gh-org-members export, for team membership and owners")
-    parse.add_argument("--clowarden", type=pathlib.Path, default=neighbor / "mirror",
+    parse.add_argument("--clowarden", type=pathlib.Path, default=here / "mirror",
                        help="gh-org-members' mirror of the CLOWarden config repos")
     parse.add_argument("--out", type=pathlib.Path,
                        default=mirror_root / "LF-Decentralized-Trust" / "tac-eligibility-check" / "hashes.js",
