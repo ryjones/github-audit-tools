@@ -1,0 +1,7 @@
+# Rust build output
+/target
+
+# Nested checkout, not part of this repo.
+/tac-eligibility-check/
+
+.DS_Store
