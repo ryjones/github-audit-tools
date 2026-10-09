@@ -15,21 +15,20 @@ Worked end to end against `lf-decentralized-trust` on 2026-09-24; the figures
 below are from that run and are there to show the shape of an answer, not as
 expected values.
 
-## What the two repositories do
+## What each part does
 
-| Repository | Binary / script | Answers |
-| --- | --- | --- |
-| `gh-org-members` | `gh-org-members` | Who is in the enterprise, in which orgs, on which teams |
-| | `gh-org-reports` | Who falls in the gaps: org members on no team, enterprise members in no org |
-| | `fetch-audit-history.zsh` | What the audit log says happened to a login (~180 days) |
-| | `mirror-clowarden.zsh` | Local clones of every CLOWarden config repo |
-| | `clowarden-history.py` | Membership history from config git history (years, not months) |
-| | `clowarden-drift.py` | Where declared access and real access disagree |
-| `gh-enterprise-repos` | `gh-enterprise-repos` | Every repository, by visibility and archived state |
+| Binary / script | Answers |
+| --- | --- |
+| `gh-org-members` | Who is in the enterprise, in which orgs, on which teams |
+| `gh-org-reports` | Who falls in the gaps: org members on no team, enterprise members in no org |
+| `gh-enterprise-repos` | Every repository, by visibility and archived state |
+| `fetch-audit-history.zsh` | What the audit log says happened to a login (~180 days) |
+| `mirror-clowarden.zsh` | Local clones of every CLOWarden config repo |
+| `clowarden-history.py` | Membership history from config git history (years, not months) |
+| `clowarden-drift.py` | Where declared access and real access disagree |
 
-The two checkouts are expected to sit side by side; the commands below assume
-`gh-org-members` is the working directory and `../gh-enterprise-repos` is the
-other.
+All of it lives in this repository, so every command below runs from the
+repository root.
 
 ## 0. Prerequisites
 
@@ -38,7 +37,7 @@ other.
   `read:enterprise` (or `admin:enterprise`) for enterprise listings,
   `read:audit_log` (or `admin:enterprise`) for the audit log, and `read:user`
   **only** if you want `--include-email`.
-- Build once: `cargo build --release` in each repository.
+- Build once: `cargo build --release`, which builds all four binaries.
 
 ### The credential trap, which is the whole ballgame
 
@@ -112,11 +111,10 @@ yq -o=json '.people' results/people.yaml | jq -r '
 
 ## 3. Export the repositories
 
-From `../gh-enterprise-repos`. Four slices, so the parts add up: public,
-private and internal partition the whole, and archived cuts across it.
+Four slices, so the parts add up: public, private and internal partition the
+whole, and archived cuts across it.
 
 ```sh
-cd ../gh-enterprise-repos
 for spec in "all:include:repos" "private:include:repos-private" "internal:include:repos-internal"; do
   vis=${spec%%:*}; rest=${spec#*:}; arch=${rest%%:*}; name=${rest#*:}
   env -u GITHUB_TOKEN -u GH_TOKEN ./target/release/gh-enterprise-repos \
@@ -177,8 +175,7 @@ reconciliation — there is no declared intent to compare against.
 ## 5. Mirror the configs
 
 ```sh
-cd ../gh-org-members
-./mirror-clowarden.zsh ../gh-enterprise-repos/reports/clowarden-watched-repos.csv
+./mirror-clowarden.zsh        # defaults to reports/clowarden-watched-repos.csv
 ```
 
 Clones into `mirror/<org>/<repo>` over HTTPS, eight at a time, and **fetches
@@ -277,15 +274,14 @@ staff accounts — leaving perhaps three things to actually look at.
 ## Output layout
 
 ```
-gh-org-members/
-  results/            # exports and audit captures (gitignored)
-  mirror/<org>/<repo> # CLOWarden config checkouts (gitignored)
-  reports/
-    <login>/<login>.{json,csv}   # per-login history, all orgs merged
-    drift.{csv,json,md}          # reconciliation
-gh-enterprise-repos/
-  reports/            # repository exports, YAML + JSON (gitignored)
+results/              # people exports and audit captures (gitignored)
+mirror/<org>/<repo>   # CLOWarden config checkouts (gitignored)
+reports/
+  <enterprise>.yaml            # repository exports, YAML + JSON
+  clowarden-watched-repos.csv  # what CLOWarden manages
+  <login>/<login>.{json,csv}   # per-login history, all orgs merged
+  drift.{csv,json,md}          # reconciliation
 ```
 
 Everything under `results/`, `mirror/` and `reports/` names real people and
-private repositories, and is gitignored in both repositories. Keep it that way.
+private repositories, and is gitignored. Keep it that way.

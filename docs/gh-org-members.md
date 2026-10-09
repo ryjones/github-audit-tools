@@ -15,7 +15,8 @@ GitHub itself uses.
 ## Build
 
 ```sh
-cargo build --release
+cargo build --release          # all four binaries in this repository
+./target/release/gh-org-members --help
 ```
 
 ## Use
@@ -428,8 +429,10 @@ report is unanswerable.
 
 ## Scripts
 
-Three helpers sit beside the binaries. None of them is required to use the
+Four helpers sit beside the binaries. None of them is required to use the
 tools; each captures a job that came up often enough to be worth keeping.
+[docs/clowarden-reconciliation.md](clowarden-reconciliation.md) runs them all
+end to end.
 
 | Script | What it does |
 | --- | --- |
@@ -508,5 +511,5 @@ identical to the default-batch export, which is how the cursor paths are
 verified, and `<slug>.gaps.yaml` is `gh-org-reports` run over
 `<slug>.enterprise.yaml`.
 
-Every example in this README is invented. Real captures name real people, so
-they stay in `results/`, which `.gitignore` covers.
+Every example here is invented. Real captures name real people, so they stay
+in `results/`, which `.gitignore` covers.

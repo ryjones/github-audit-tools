@@ -5,15 +5,16 @@ enterprise listing every repository in every organization it contains. Public,
 non-archived repositories by default. `--org` does the same for a single
 organization without going through its enterprise.
 
-Sibling of [`gh-org-members`](../all-users-enterprise), which exports the
-people instead.
+Companion to [`gh-org-members`](gh-org-members.md), which exports the people
+instead.
 
 Works against github.com and GitHub Enterprise Server.
 
 ## Build
 
 ```sh
-cargo build --release
+cargo build --release          # all four binaries in this repository
+./target/release/gh-enterprise-repos --help
 ```
 
 ## Use
@@ -266,11 +267,10 @@ credit one anyway put it in `repos/aliases.json` as `{"email": "login"}`, which
 is never looked up and always wins. `--retry-unresolved` asks again about the
 ones that came back empty, and `--offline` resolves from the cache alone.
 
-`voters` reads the CLOWarden configs mirrored by
-[gh-org-members](https://github.com/ryjones/gh-org-members)'
-`mirror-clowarden.zsh` for which teams hold write or better, and that repo's
-`results/<enterprise>.gh.yaml` export for who is in those teams and who owns
-each organization. `voters.json` records which of the three — the config, live
+`voters` reads the CLOWarden configs that `mirror-clowarden.zsh` cloned into
+`mirror/` for which teams hold write or better, and the
+`results/<enterprise>.gh.yaml` export [gh-org-members](gh-org-members.md) wrote
+for who is in those teams and who owns each organization. `voters.json` records which of the three — the config, live
 membership, ownership — put each person on the list, so a surprise can be traced
 back.
 
@@ -285,8 +285,8 @@ the logins behind the hashes stay in `repos/`, which is gitignored.
 | `--since D` / `--until D` | The activity window (default: since 2025-07-01) |
 | `--coauthors` | Credit `Co-authored-by` trailers as activity too |
 | `--repos DIR` | The mirrors, and where the intermediate files go |
-| `--people FILE` | gh-org-members export (default: `../gh-org-members/results/lf-decentralized-trust.gh.yaml`) |
-| `--clowarden DIR` | gh-org-members' config mirror (default: `../gh-org-members/mirror`) |
+| `--people FILE` | gh-org-members export (default: `results/lf-decentralized-trust.gh.yaml`) |
+| `--clowarden DIR` | The CLOWarden config mirror (default: `mirror/`) |
 | `--out FILE` | The `hashes.js` to write |
 | `--jobs N` / `--api-jobs N` | Mirrors read at a time; API calls at a time |
 

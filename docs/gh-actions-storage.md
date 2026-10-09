@@ -18,7 +18,7 @@ reports counts non-expired artifacts only.
 ## Install
 
 ```bash
-cargo build --release
+cargo build --release          # all four binaries in this repository
 ./target/release/gh-actions-storage --help
 ```
 
@@ -193,4 +193,4 @@ cleanup job, artifacts accumulate again within days.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](../LICENSE).

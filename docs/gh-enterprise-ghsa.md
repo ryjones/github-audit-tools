@@ -25,10 +25,10 @@ there.
 
 ## Install
 
+Nothing to build — the script sits at the root of this repository:
+
 ```sh
-git clone git@github.com:ryjones/gh-enterprise-ghsa.git
-cd gh-enterprise-ghsa
-chmod +x gh-enterprise-ghsa.zsh
+./gh-enterprise-ghsa.zsh -e my-enterprise -R
 ```
 
 Requires [`gh`](https://cli.github.com) (authenticated) and [`jq`](https://jqlang.github.io/jq/).
@@ -218,4 +218,4 @@ target directory *before* spending minutes on API calls.
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0 — see [LICENSE](../LICENSE).

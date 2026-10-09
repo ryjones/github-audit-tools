@@ -1,3 +1,116 @@
 # github-audit-tools
 
-Tooling for auditing GitHub enterprises, organizations and repositories.
+Tools for auditing a GitHub enterprise: what repositories it holds, who can
+reach them, which advisories are open against them, and what Actions storage
+they are paying for. Four Rust binaries and eight scripts, each answering a
+question that came up often enough to be worth automating.
+
+Everything here reads GitHub rather than changing it, with one exception
+(`gh-actions-storage purge`, which deletes only with `--apply`).
+
+## The tools
+
+| Tool | Answers | Docs |
+| --- | --- | --- |
+| `gh-enterprise-repos` | Every repository in an enterprise or organization, by visibility and archived state, as YAML — optionally with the teams that reach each one | [docs](docs/gh-enterprise-repos.md) |
+| `gh-org-members` | Every person in an enterprise, the organizations they belong to, and the teams they sit on | [docs](docs/gh-org-members.md) |
+| `gh-org-reports` | The gaps in a people export: organization members on no team, enterprise members in no organization | [docs](docs/gh-org-members.md#reports) |
+| `gh-actions-storage` | Which repositories hold the most live Actions artifact storage, and purging the old ones | [docs](docs/gh-actions-storage.md) |
+| `gh-enterprise-ghsa.zsh` | Every security advisory across an enterprise's organizations, with CVEs, and which repositories have private vulnerability reporting off | [docs](docs/gh-enterprise-ghsa.md) |
+
+And the scripts that build on their output:
+
+| Script | What it does |
+| --- | --- |
+| `clone-repos.zsh` | Bare-mirrors every public, non-archived repository a `gh-enterprise-repos` report names into `repos/<org>/<name>` |
+| `tac-eligibility.py` | Turns those mirrors, the CLOWarden configs and a people export into the `hashes.js` the LFDT TAC election page serves |
+| `drift.zsh` | Compares one organization's export with the CLOWarden `config.yaml` meant to describe it |
+| `mirror-clowarden.zsh` | Clones, or fetches, every CLOWarden config repository into `mirror/<org>/<repo>` |
+| `clowarden-history.py` | Derives team membership history from the git history of those configs — years, where the audit log serves about 180 days |
+| `clowarden-drift.py` | Reconciles the configs against a people export and reports every disagreement |
+| `fetch-audit-history.zsh` | Pulls each login's org and team membership history out of the enterprise audit log |
+
+## Build
+
+```sh
+cargo build --release          # all four binaries
+./target/release/gh-org-members --help
+```
+
+The scripts need `zsh`, [`gh`](https://cli.github.com), `jq`, `yq` and
+`python3` — `tac-eligibility.py` and the `clowarden-*.py` scripts use the
+standard library only.
+
+## Authentication
+
+Every binary and script resolves a credential the same way: `GITHUB_TOKEN`,
+then `GH_TOKEN`, then `gh auth token`. Each one prints which it used.
+
+Prefer `gh`'s own credential. A classic PAT has to be SSO-authorized for each
+organization separately, and an organization it was not authorized for is not
+an error — `enterprise.organizations` simply does not return it, and its people
+and repositories are then missing from the export with nothing to say so. That
+trap is the subject of [whose view an export is](docs/gh-org-members.md#whose-view-an-export-is),
+and it is worth reading before trusting a number from any of these tools.
+
+Scopes, by what you are asking for: `read:org` throughout,
+`read:enterprise` for anything enterprise-wide, `read:audit_log` for the audit
+history, organization owner or security manager for advisories, and write
+access to Actions to purge artifacts.
+
+```sh
+env -u GITHUB_TOKEN -u GH_TOKEN ./target/release/gh-org-members -e acme-inc -o results/people.yaml
+```
+
+## Working end to end
+
+Two workflows chain most of the above:
+
+- **Who really has access** —
+  [docs/clowarden-reconciliation.md](docs/clowarden-reconciliation.md) walks an
+  enterprise from a people export through the CLOWarden configs to a drift
+  report, and records the gotchas each step has.
+- **LFDT TAC election eligibility** —
+  [the TAC election hashes section](docs/gh-enterprise-repos.md#tac-election-hashes):
+  export the repositories, mirror them, count commit authors in the window,
+  union the maintainers, write `hashes.js`.
+
+## Where output goes
+
+`results/`, `reports/`, `repos/` and `mirror/` hold what the tools write:
+exports, reports, bare clones and config checkouts. All four are gitignored,
+because they name real people and real private repositories. Keep it that way —
+every example in the docs is invented for that reason.
+
+## Layout
+
+```
+Cargo.toml            one package, four binaries
+src/
+  client.rs           the GraphQL client gh-enterprise-repos and
+                      gh-org-members share
+  repos_*.rs          repository inventory
+  members_*.rs        people, teams, audit sweeps, reports
+  storage_*.rs        Actions artifact storage
+  bin/<tool>.rs       one file per binary
+docs/                 one page per tool, plus the reconciliation HOWTO
+*.zsh, *.py           the scripts, at the root
+```
+
+`src` is flat, so each module carries the prefix of the tool that owns it;
+three tools had a `client.rs` and two had a `model.rs`.
+
+## Provenance
+
+Each tool grew up in its own repository — `gh-enterprise-repos`,
+`gh-org-members`, `gh-enterprise-ghsa`, `gh-actions-storage`. They were folded
+in here with `git subtree`, so every commit and every blame line survives the
+move. The archived repositories keep their own copies of that history.
+
+`tac-eligibility-check/` is a checkout of
+[the LFDT election page](https://github.com/LF-Decentralized-Trust/tac-eligibility-check),
+not part of this repository; it is gitignored and left alone.
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE).
