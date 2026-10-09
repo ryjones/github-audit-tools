@@ -274,8 +274,10 @@ for who is in those teams and who owns each organization. `voters.json` records 
 membership, ownership — put each person on the list, so a surprise can be traced
 back.
 
-`write` renders both arrays into `hashes.js` and prints how many hashes each
-list gained and lost against the file that was there. It commits nothing, and
+`write` renders both arrays into the `hashes.js` of the `tac-eligibility-check`
+checkout in this repository and prints how many hashes each list gained and lost
+against the file that was there. That one file is all it touches: it runs no git
+commands, so the checkout's remotes, branch and other files are left alone. It commits nothing, and
 the logins behind the hashes stay in `repos/`, which is gitignored.
 
 | Flag | Meaning |
@@ -287,7 +289,7 @@ the logins behind the hashes stay in `repos/`, which is gitignored.
 | `--repos DIR` | The mirrors, and where the intermediate files go |
 | `--people FILE` | gh-org-members export (default: `results/lf-decentralized-trust.gh.yaml`) |
 | `--clowarden DIR` | The CLOWarden config mirror (default: `mirror/`) |
-| `--out FILE` | The `hashes.js` to write |
+| `--out FILE` | The `hashes.js` to write (default: `tac-eligibility-check/hashes.js` in this repository) |
 | `--jobs N` / `--api-jobs N` | Mirrors read at a time; API calls at a time |
 
 ## Whose view a listing is

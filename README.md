@@ -109,7 +109,9 @@ move. The archived repositories keep their own copies of that history.
 
 `tac-eligibility-check/` is a checkout of
 [the LFDT election page](https://github.com/LF-Decentralized-Trust/tac-eligibility-check),
-not part of this repository; it is gitignored and left alone.
+not part of this repository and gitignored. `tac-eligibility.py` writes its
+`hashes.js` and nothing else — no git commands, so its remotes and branch are
+left alone. Review and commit it there yourself.
 
 ## License
 

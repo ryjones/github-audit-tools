@@ -17,7 +17,7 @@ next one can be re-run on its own:
   authors  mirrors            -> repos/authors.json   (no network)
   logins   authors.json       -> repos/logins.json    (GitHub API, cached)
   voters   configs + people   -> repos/voters.json    (no network)
-  write    the two lists      -> hashes.js
+  write    the two lists      -> tac-eligibility-check/hashes.js
 
     ./tac-eligibility.py --report reports/lf-decentralized-trust.yaml
     ./tac-eligibility.py --phase logins          # resume the API half alone
@@ -551,7 +551,8 @@ def phase_write(args):
     if not nominees:
         die(f"no {args.logins}; run the logins phase first")
     if not args.out.parent.is_dir():
-        die(f"no directory for {args.out}")
+        die(f"no directory for {args.out}; clone tac-eligibility-check beside "
+            f"this script, or name another file with --out")
 
     voter_logins = [entry["login"] for entry in voters["voters"].values()]
     nominee_logins = [entry["login"] for entry in nominees["logins"].values()]
@@ -588,7 +589,6 @@ def phase_write(args):
 
 def main():
     here = pathlib.Path(__file__).resolve().parent
-    mirror_root = here.parent.parent / "github-mirror"
 
     parse = argparse.ArgumentParser(
         description=__doc__.splitlines()[0],
@@ -612,8 +612,9 @@ def main():
     parse.add_argument("--clowarden", type=pathlib.Path, default=here / "mirror",
                        help="gh-org-members' mirror of the CLOWarden config repos")
     parse.add_argument("--out", type=pathlib.Path,
-                       default=mirror_root / "LF-Decentralized-Trust" / "tac-eligibility-check" / "hashes.js",
-                       help="the hashes.js to write")
+                       default=here / "tac-eligibility-check" / "hashes.js",
+                       help="the hashes.js to write (default: the checkout in "
+                            "this repository)")
     parse.add_argument("--jobs", type=int, default=os.cpu_count() or 8,
                        help="mirrors read at a time")
     parse.add_argument("--api-jobs", type=int, default=4,
