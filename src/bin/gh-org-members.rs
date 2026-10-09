@@ -20,7 +20,7 @@ use github_audit_tools::members_yaml as yaml;
 /// Export the people in a GitHub enterprise or organization, and the teams they
 /// belong to, as YAML.
 #[derive(Debug, Parser)]
-#[command(name = "gh-org-members", version, about, long_about = None)]
+#[command(name = "gh-org-members", version, long_about = None)]
 struct Args {
     /// Enterprise slug; every organization in it is queried.
     #[arg(short, long, value_name = "SLUG")]

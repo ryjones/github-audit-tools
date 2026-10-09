@@ -17,8 +17,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::time::Duration;
 
+use crate::rest_client::GhClient;
 use crate::storage_artifacts::{self as artifacts, Artifact};
-use crate::storage_client::GhClient;
 use crate::storage_discover::{self as discover, Repo};
 use crate::storage_results::{self as results, Results};
 use crate::storage_util::{epoch_seconds, gib, now_epoch};

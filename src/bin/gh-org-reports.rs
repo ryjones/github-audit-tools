@@ -17,7 +17,7 @@ use github_audit_tools::members_yaml as yaml;
 
 /// Report on the people a gh-org-members export leaves in the gaps.
 #[derive(Debug, Parser)]
-#[command(name = "gh-org-reports", version, about, long_about = None)]
+#[command(name = "gh-org-reports", version, long_about = None)]
 struct Args {
     /// YAML export written by gh-org-members. `-` reads stdin.
     #[arg(value_name = "FILE")]

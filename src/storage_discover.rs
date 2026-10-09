@@ -9,7 +9,7 @@
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 
-use crate::storage_client::GhClient;
+use crate::rest_client::GhClient;
 use crate::storage_util::parse_repo;
 
 const ORGS_QUERY: &str = r#"

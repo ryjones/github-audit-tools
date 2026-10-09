@@ -1,4 +1,4 @@
-//! Authenticated GitHub API client: GraphQL for discovery, REST for artifacts.
+//! Authenticated GitHub REST client, with GraphQL alongside it.
 //!
 //! GitHub's GraphQL schema does not expose Actions artifacts, so this client
 //! speaks both protocols:

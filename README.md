@@ -17,6 +17,7 @@ Everything here reads GitHub rather than changing it, with one exception
 | `gh-org-reports` | The gaps in a people export: organization members on no team, enterprise members in no organization | [docs](docs/gh-org-members.md#reports) |
 | `gh-actions-storage` | Which repositories hold the most live Actions artifact storage, and purging the old ones | [docs](docs/gh-actions-storage.md) |
 | `clowarden-drift` | Where an organization's declared access (its CLOWarden config) and its real access disagree, one record per disagreement | [docs](docs/gh-org-members.md#reconciling-against-github) |
+| `tac-eligibility` | Who may vote and who may stand in the LFDT TAC election, as the `hashes.js` the eligibility page serves | [docs](docs/tac-eligibility.md) |
 | `gh-enterprise-ghsa.zsh` | Every security advisory across an enterprise's organizations, with CVEs, and which repositories have private vulnerability reporting off | [docs](docs/gh-enterprise-ghsa.md) |
 
 And the scripts that build on their output:
@@ -24,7 +25,6 @@ And the scripts that build on their output:
 | Script | What it does |
 | --- | --- |
 | `clone-repos.zsh` | Bare-mirrors every public, non-archived repository a `gh-enterprise-repos` report names into `repos/<org>/<name>` |
-| `tac-eligibility.py` | Turns those mirrors, the CLOWarden configs and a people export into the `hashes.js` the LFDT TAC election page serves |
 | `drift.zsh` | Compares one organization's export with the CLOWarden `config.yaml` meant to describe it |
 | `mirror-clowarden.zsh` | Clones, or fetches, every CLOWarden config repository into `mirror/<org>/<repo>` |
 | `clowarden-history.py` | Derives team membership history from the git history of those configs — years, where the audit log serves about 180 days |
@@ -33,7 +33,7 @@ And the scripts that build on their output:
 ## Build
 
 ```sh
-make                 # all four binaries, debug, into target/debug
+make                 # all six binaries, debug, into target/debug
 make release         # optimized, into target/release
 make check           # fmt, clippy, the tests, and a syntax pass over the scripts
 ./target/release/gh-org-members --help
@@ -43,8 +43,7 @@ make check           # fmt, clippy, the tests, and a syntax pass over the script
 you would rather.
 
 The scripts need no build, only `zsh`, [`gh`](https://cli.github.com), `jq`,
-`yq` and `python3` — `tac-eligibility.py` and `clowarden-history.py` use the
-standard library only.
+`yq` and `python3`; `clowarden-history.py` uses the standard library and `yq`.
 
 ## Authentication
 
@@ -76,9 +75,9 @@ Two workflows chain most of the above:
   enterprise from a people export through the CLOWarden configs to a drift
   report, and records the gotchas each step has.
 - **LFDT TAC election eligibility** —
-  [the TAC election hashes section](docs/gh-enterprise-repos.md#tac-election-hashes):
-  export the repositories, mirror them, count commit authors in the window,
-  union the maintainers, write `hashes.js`.
+  [docs/tac-eligibility.md](docs/tac-eligibility.md): export the repositories,
+  mirror them, count commit authors in the window, union the maintainers, write
+  `hashes.js`.
 
 ## Where output goes
 
@@ -91,13 +90,17 @@ every example in the docs is invented for that reason.
 
 ```
 Makefile              make, make release, make check
-Cargo.toml            one package, four binaries
+Cargo.toml            one package, six binaries
 src/
   client.rs           the GraphQL client gh-enterprise-repos and
                       gh-org-members share
+  rest_client.rs      the REST client gh-actions-storage and
+                      tac-eligibility share
   repos_*.rs          repository inventory
   members_*.rs        people, teams, audit sweeps, reports
   storage_*.rs        Actions artifact storage
+  clowarden*.rs       the CLOWarden configs, and the drift against them
+  tac_*.rs            the TAC election phases
   bin/<tool>.rs       one file per binary
 docs/                 one page per tool, plus the reconciliation HOWTO
 *.zsh, *.py           the scripts, at the root
@@ -115,7 +118,7 @@ move. The archived repositories keep their own copies of that history.
 
 `tac-eligibility-check/` is a checkout of
 [the LFDT election page](https://github.com/LF-Decentralized-Trust/tac-eligibility-check),
-not part of this repository and gitignored. `tac-eligibility.py` writes its
+not part of this repository and gitignored. `tac-eligibility` writes its
 `hashes.js` and nothing else — no git commands, so its remotes and branch are
 left alone. Review and commit it there yourself.
 

@@ -15,21 +15,23 @@ use anyhow::{Context, Result, bail};
 use clap::Parser;
 
 use github_audit_tools::clowarden;
-use github_audit_tools::clowarden_drift::{
-    self as drift, Counts, DriftReport, Source, Totals,
-};
+use github_audit_tools::clowarden_drift::{self as drift, Counts, DriftReport, Source, Totals};
 use github_audit_tools::members_model::Report;
 
 /// Reconcile the CLOWarden configs against a gh-org-members export.
 #[derive(Debug, Parser)]
-#[command(name = "clowarden-drift", version, about, long_about = None)]
+#[command(name = "clowarden-drift", version, long_about = None)]
 struct Args {
     /// The config checkouts mirror-clowarden.zsh made.
     #[arg(long, value_name = "DIR", default_value = "mirror")]
     mirror: PathBuf,
 
     /// YAML export written by gh-org-members.
-    #[arg(long, value_name = "FILE", default_value = "results/lf-decentralized-trust.gh.yaml")]
+    #[arg(
+        long,
+        value_name = "FILE",
+        default_value = "results/lf-decentralized-trust.gh.yaml"
+    )]
     people: PathBuf,
 
     /// Where drift.csv and drift.json go.
@@ -107,8 +109,7 @@ fn main() -> Result<()> {
         .with_context(|| format!("writing {}", csv_path.display()))?;
     let mut json = serde_json::to_string_pretty(&report)?;
     json.push('\n');
-    std::fs::write(&json_path, json)
-        .with_context(|| format!("writing {}", json_path.display()))?;
+    std::fs::write(&json_path, json).with_context(|| format!("writing {}", json_path.display()))?;
 
     let mut out = std::io::stdout().lock();
     for (kind, count) in &by_kind.0 {

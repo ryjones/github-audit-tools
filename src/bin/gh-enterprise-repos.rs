@@ -16,7 +16,7 @@ use model::*;
 /// of a single organization — as YAML: one file per enterprise or organization,
 /// public non-archived repositories by default.
 #[derive(Debug, Parser)]
-#[command(name = "gh-enterprise-repos", version, about, long_about = None)]
+#[command(name = "gh-enterprise-repos", version, long_about = None)]
 struct Args {
     /// Enterprise slug. Repeatable; each one gets its own YAML file.
     #[arg(short, long, value_name = "SLUG", required_unless_present = "org")]

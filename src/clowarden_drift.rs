@@ -10,10 +10,10 @@
 
 use std::collections::BTreeMap;
 
-use serde::{Serialize, Serializer};
 use serde::ser::SerializeMap;
+use serde::{Serialize, Serializer};
 
-use crate::clowarden::{team_slug, Mirror};
+use crate::clowarden::{Mirror, team_slug};
 use crate::members_model::Report;
 
 /// Which way a team's membership disagrees.
@@ -56,14 +56,7 @@ pub struct Finding {
 }
 
 /// The columns of `drift.csv`, in order.
-pub const FIELDS: [&str; 6] = [
-    "login",
-    "org",
-    "team",
-    "kind",
-    "github_role",
-    "config_role",
-];
+pub const FIELDS: [&str; 6] = ["login", "org", "team", "kind", "github_role", "config_role"];
 
 /// `(org_lower, team_slug) -> login_lower -> (role, login as written)`.
 ///
@@ -83,10 +76,7 @@ pub fn declared(mirror: &Mirror) -> TeamState {
                 for login in logins {
                     let login = login.trim();
                     if !login.is_empty() {
-                        members.insert(
-                            login.to_lowercase(),
-                            (role.to_string(), login.to_string()),
-                        );
+                        members.insert(login.to_lowercase(), (role.to_string(), login.to_string()));
                     }
                 }
             }
@@ -117,7 +107,11 @@ pub fn actual(export: &Report) -> TeamState {
 }
 
 /// Every disagreement, ordered by organization, then team, then login.
-pub fn reconcile(declared: &TeamState, actual: &TeamState, managed_orgs: &[String]) -> Vec<Finding> {
+pub fn reconcile(
+    declared: &TeamState,
+    actual: &TeamState,
+    managed_orgs: &[String],
+) -> Vec<Finding> {
     let managed: std::collections::BTreeSet<String> =
         managed_orgs.iter().map(|org| org.to_lowercase()).collect();
 
@@ -173,8 +167,11 @@ pub fn reconcile(declared: &TeamState, actual: &TeamState, managed_orgs: &[Strin
     }
 
     findings.sort_by(|a, b| {
-        (a.org.to_lowercase(), &a.team, a.login.to_lowercase())
-            .cmp(&(b.org.to_lowercase(), &b.team, b.login.to_lowercase()))
+        (a.org.to_lowercase(), &a.team, a.login.to_lowercase()).cmp(&(
+            b.org.to_lowercase(),
+            &b.team,
+            b.login.to_lowercase(),
+        ))
     });
     findings
 }

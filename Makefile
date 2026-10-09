@@ -1,4 +1,4 @@
-# Build the four binaries. The scripts need no build -- they are zsh and
+# Build the six binaries. The scripts need no build -- they are zsh and
 # python -- so `make check` syntax-checks them instead.
 #
 #   make            debug binaries, into target/debug
@@ -12,7 +12,8 @@
 CARGO     ?= cargo
 CARGOFLAGS ?=
 
-BINS    := gh-enterprise-repos gh-org-members gh-org-reports gh-actions-storage
+BINS    := gh-enterprise-repos gh-org-members gh-org-reports gh-actions-storage \
+           clowarden-drift tac-eligibility
 ZSH     := $(wildcard *.zsh)
 PYTHON  := $(wildcard *.py)
 

@@ -162,7 +162,10 @@ pub fn read(mirror: &Path, mut warn: impl FnMut(String)) -> Result<Mirror> {
             match parse(&path, &org) {
                 Ok(config) => found.configs.push(config),
                 Err(problem) => {
-                    warn(format!("warning: cannot parse {}: {problem}", path.display()));
+                    warn(format!(
+                        "warning: cannot parse {}: {problem}",
+                        path.display()
+                    ));
                     found.skipped.push(org.clone());
                 }
             }
@@ -174,10 +177,10 @@ pub fn read(mirror: &Path, mut warn: impl FnMut(String)) -> Result<Mirror> {
 /// Parse one config file. Unknown keys are ignored, and a team without a name
 /// is dropped: it cannot be matched to anything on GitHub.
 pub fn parse(path: &Path, org: &str) -> Result<Config> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading {}", path.display()))?;
-    let doc: Value = serde_yaml_ng::from_str(&text)
-        .with_context(|| format!("parsing {}", path.display()))?;
+    let text =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let doc: Value =
+        serde_yaml_ng::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
 
     let mut config = Config {
         org: org.to_string(),
@@ -287,7 +290,10 @@ mod tests {
     fn a_team_slug_collapses_every_run_of_punctuation() {
         assert_eq!(team_slug("Fabric Maintainers"), "fabric-maintainers");
         assert_eq!(team_slug("TSC / Chairs"), "tsc-chairs");
-        assert_eq!(team_slug("--leading and trailing--"), "leading-and-trailing");
+        assert_eq!(
+            team_slug("--leading and trailing--"),
+            "leading-and-trailing"
+        );
         assert_eq!(team_slug("Besu"), "besu");
         assert_eq!(team_slug("a.b_c"), "a-b-c");
     }
@@ -305,10 +311,8 @@ mod tests {
     /// Write one config to its own directory, since the tests run in parallel
     /// and the filename is part of what `parse` is given.
     fn config_from(case: &str, yaml: &str) -> Config {
-        let dir = std::env::temp_dir().join(format!(
-            "clowarden-test-{}-{case}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("clowarden-test-{}-{case}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let path = dir.join("config.yaml");
         std::fs::write(&path, yaml).expect("write config");

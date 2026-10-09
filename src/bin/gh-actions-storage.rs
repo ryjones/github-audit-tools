@@ -13,14 +13,13 @@
 //! LFS — each has its own storage accounting.
 
 use github_audit_tools::{
-    storage_client as client, storage_measure as measure, storage_purge as purge,
-    storage_rank as rank,
+    rest_client as client, storage_measure as measure, storage_purge as purge, storage_rank as rank,
 };
 
 use anyhow::{Result, bail};
 use clap::{Args, Parser, Subcommand};
 
-use github_audit_tools::storage_client::GhClient;
+use github_audit_tools::rest_client::GhClient;
 
 #[derive(Parser)]
 #[command(
