@@ -42,14 +42,12 @@ OUT=tac-eligibility-check/hashes.js
 
 ENTERPRISES=(lf-decentralized-trust openwallet-foundation)
 
-# The TAC is LFDT's, so both halves of the roll are scoped to its export: the
-# nominee sweep counts only the repositories this report names, and the voter
-# roll comes from this people file. The openwallet-foundation export is still
-# made -- its repositories are mirrored and its addresses land in the shared
-# login cache -- it just does not widen either list. Add the second report here
-# to count its repositories too.
-NOMINEE_REPORTS=($RESULTS/lf-decentralized-trust.yaml)
-PEOPLE=$PEEPS/lf-decentralized-trust.yaml
+# Both lists span both enterprises. The reports scope the nominee sweep to the
+# repositories they name; the people exports are merged for the voter roll --
+# one export covers one enterprise, and someone who turns up in both is one
+# voter whose `where` names every place that put them there.
+REPORTS=($RESULTS/${^ENTERPRISES}.yaml)
+PEOPLE=($PEEPS/${^ENTERPRISES}.yaml)
 
 SINCE=2025-10-01
 
@@ -127,8 +125,11 @@ fi
 if (( want[voters] )) && [[ ! -d ${OUT:h} ]]; then
   missing "no ${OUT:h}/ checkout to write ${OUT:t} into; clone it here first"
 fi
-if (( want[voters] )) && ! (( want[people] )) && [[ ! -r $PEOPLE ]]; then
-  missing "no $PEOPLE; run the people step, or point PEOPLE at an export"
+if (( want[voters] )) && ! (( want[people] )); then
+  for people in $PEOPLE; do
+    [[ -r $people ]] \
+      || missing "no $people; run the people step, or edit PEOPLE in this script"
+  done
 fi
 
 # --- the steps ---------------------------------------------------------------
@@ -168,12 +169,11 @@ step_people() {
 
 step_clones() {
   banner "bare mirrors -> $REPOS/"
-  local -a reports=($RESULTS/${^ENTERPRISES}.yaml)
   local report
-  for report in $reports; do
+  for report in $REPORTS; do
     [[ -r $report ]] || missing "cannot read $report; run the repos step first"
   done
-  run ./clone-repos.zsh -d $REPOS $reports
+  run ./clone-repos.zsh -d $REPOS $REPORTS
 }
 
 step_mirror() {
@@ -198,12 +198,13 @@ step_mirror() {
   The voters step reads $MIRROR/<org>/<repo>."
 }
 
-# `--report A --report B`, however many reports scope the count.
-reports_args() {
-  local report
-  for report in $NOMINEE_REPORTS; do
-    print -r -- --report
-    print -r -- $report
+# `--flag A --flag B`, one occurrence per file, however many there are.
+repeated() {
+  local flag=$1 value
+  shift
+  for value in "$@"; do
+    print -r -- $flag
+    print -r -- $value
   done
 }
 
@@ -211,7 +212,7 @@ reports_args() {
 # accounts. The only step that talks to the API.
 step_nominees() {
   banner "nominees: commit activity since $SINCE"
-  run $BIN/tac-eligibility ${(f)"$(reports_args)"} --since $SINCE \
+  run $BIN/tac-eligibility ${(f)"$(repeated --report $REPORTS)"} --since $SINCE \
     --repos $REPOS --phase authors --phase logins
 }
 
@@ -219,9 +220,9 @@ step_nominees() {
 # then both lists into hashes.js.
 step_voters() {
   banner "voters: maintainers and owners, then $OUT"
-  run $BIN/tac-eligibility ${(f)"$(reports_args)"} --since $SINCE \
+  run $BIN/tac-eligibility ${(f)"$(repeated --report $REPORTS)"} --since $SINCE \
     --repos $REPOS --phase voters --phase write \
-    --people $PEOPLE --clowarden $MIRROR --out $OUT
+    ${(f)"$(repeated --people $PEOPLE)"} --clowarden $MIRROR --out $OUT
 }
 
 # --- run ---------------------------------------------------------------------

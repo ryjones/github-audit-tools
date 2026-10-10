@@ -77,13 +77,15 @@ struct Args {
     #[arg(long)]
     coauthors: bool,
 
-    /// gh-org-members export, for team membership and owners.
+    /// gh-org-members export, for team membership and owners. Repeatable: one
+    /// export covers one enterprise, and an election spanning two of them
+    /// needs both.
     #[arg(
         long,
         value_name = "FILE",
         default_value = "results/lf-decentralized-trust.gh.yaml"
     )]
-    people: PathBuf,
+    people: Vec<PathBuf>,
 
     /// The mirror of the CLOWarden config repositories.
     #[arg(long, value_name = "DIR", default_value = "mirror")]
@@ -443,10 +445,22 @@ fn voters(args: &Args, paths: &Paths) -> Result<()> {
             args.clowarden.display()
         );
     }
-    let text = std::fs::read_to_string(&args.people)
-        .with_context(|| format!("cannot read {}", args.people.display()))?;
-    let export: Report = serde_yaml_ng::from_str(&text)
-        .with_context(|| format!("{} is not a gh-org-members export", args.people.display()))?;
+    // Every export, in the order they were given. One line each: a run that
+    // reads two files should say so, since a missing one costs voters quietly.
+    let mut exports: Vec<(String, Report)> = Vec::new();
+    for path in &args.people {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read {}", path.display()))?;
+        let export: Report = serde_yaml_ng::from_str(&text)
+            .with_context(|| format!("{} is not a gh-org-members export", path.display()))?;
+        println!(
+            "{}: {} people across {} organizations",
+            path.display(),
+            export.people.len(),
+            export.organizations.len()
+        );
+        exports.push((path.display().to_string(), export));
+    }
 
     let mirror = clowarden::read(&args.clowarden, |warning| eprintln!("{warning}"))?;
     let skipped = mirror.skipped.len();
@@ -461,9 +475,18 @@ fn voters(args: &Args, paths: &Paths) -> Result<()> {
         }
     );
 
-    let (voters, combinations) =
-        tac_voters::compute(&mirror, &export, &args.people.display().to_string());
+    let (voters, combinations) = tac_voters::compute(&mirror, &exports);
     tac::write_json(&paths.voters, &voters)?;
+    if !voters.orgs_without_people.is_empty() {
+        // Not fatal: an org can be in the configs and outside both
+        // enterprises. Worth a line either way, because the other reason is a
+        // forgotten --people.
+        eprintln!(
+            "no export covers {}, so their live members and owners are not on \
+             the list",
+            voters.orgs_without_people.join(", ")
+        );
+    }
     println!(
         "{} maintainers ({} bots dropped) -> {}",
         voters.voters.len(),

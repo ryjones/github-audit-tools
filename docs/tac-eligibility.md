@@ -12,7 +12,7 @@ two lists. The two lists come from different places:
   the organization owners. Neither list is a subset of the other.
 
 It needs three things on disk first: the mirrors (`clone-repos.zsh`), the
-CLOWarden configs (`mirror-clowarden.zsh`), and a people export
+CLOWarden configs (`mirror-clowarden.zsh`), and a people export per enterprise
 (`gh-org-members`). Only the `logins` phase talks to GitHub, and it resolves a
 credential the way every tool here does — `GITHUB_TOKEN`, `GH_TOKEN`, then
 `gh auth token`.
@@ -38,13 +38,10 @@ credential the way every tool here does — `GITHUB_TOKEN`, `GH_TOKEN`, then
 | `nominees` | `tac-eligibility --phase authors --phase logins` — the only step that calls the API |
 | `voters` | `tac-eligibility --phase voters --phase write` — the roll, then `hashes.js` |
 
-The TAC is LFDT's, so both lists are scoped to the LFDT export: `--report
-results/lf-decentralized-trust.yaml` for the nominees and
-`peeps/lf-decentralized-trust.yaml` for the voters. The
-openwallet-foundation export is still made and its repositories still mirrored
-— its addresses land in the shared `repos/cache.json`, which is a call the next
-run does not make — but it widens neither list. Both are variables at the top
-of the script (`NOMINEE_REPORTS`, `PEOPLE`) if that changes.
+Both lists span both enterprises: every report is passed to the nominee sweep,
+and every people export to the voter roll. `REPORTS` and `PEOPLE` at the top of
+the script are derived from `ENTERPRISES`, so adding a third enterprise is one
+word.
 
 Nothing in the script commits anything, and the steps underneath are what the
 rest of this page describes.
@@ -66,7 +63,7 @@ says how many of them are not cloned yet. Without it every mirror under
 | --- | --- | --- | --- |
 | `authors` | the mirrors | `repos/authors.json` | none |
 | `logins` | `authors.json`, `repos/cache.json` | `repos/logins.json` | GitHub API |
-| `voters` | the CLOWarden configs, the org-members export | `repos/voters.json` | none |
+| `voters` | the CLOWarden configs, the org-members exports | `repos/voters.json` | none |
 | `write` | `logins.json`, `voters.json` | `hashes.js` | none |
 
 `authors` reads each mirror with `git log --all --since`, which needs no trees,
@@ -83,11 +80,19 @@ is never looked up and always wins. `--retry-unresolved` asks again about the
 ones that came back empty, and `--offline` resolves from the cache alone.
 
 `voters` reads the CLOWarden configs that `mirror-clowarden.zsh` cloned into
-`mirror/` for which teams hold write or better, and the
-`results/<enterprise>.gh.yaml` export [gh-org-members](gh-org-members.md) wrote
-for who is in those teams and who owns each organization. `voters.json` records
-which of the three — the config, live membership, ownership — put each person on
-the list, so a surprise can be traced back.
+`mirror/` for which teams hold write or better, and the export
+[gh-org-members](gh-org-members.md) wrote for who is in those teams and who owns
+each organization. `voters.json` records which of the three — the config, live
+membership, ownership — put each person on the list, so a surprise can be traced
+back.
+
+One export covers one enterprise, so `--people` is repeatable and an election
+spanning two of them passes both. The exports are merged, not concatenated:
+someone both name is one voter, whose `sources` and `where` carry every reason
+and place that put them there. `voters.json` also lists
+`orgs_without_people` — organizations the configs declare that no export covers.
+Those have no live membership and no owners on the list, which is what a
+forgotten `--people` looks like from the outside.
 
 `write` renders both arrays into the `hashes.js` of the `tac-eligibility-check`
 checkout in this repository and prints how many hashes each list gained and lost
@@ -103,7 +108,7 @@ committing the result is a hand step. The logins behind the hashes stay in
 | `--since D` / `--until D` | The activity window (default: since 2025-07-01) |
 | `--coauthors` | Credit `Co-authored-by` trailers as activity too |
 | `--repos DIR` | The mirrors, and where the intermediate files go |
-| `--people FILE` | gh-org-members export (default: `results/lf-decentralized-trust.gh.yaml`) |
+| `--people FILE` | gh-org-members export; repeatable, one per enterprise, merged (default: `results/lf-decentralized-trust.gh.yaml`) |
 | `--clowarden DIR` | The CLOWarden config mirror (default: `mirror/`) |
 | `--out FILE` | The `hashes.js` to write (default: `tac-eligibility-check/hashes.js` in this repository) |
 | `--jobs N` / `--api-jobs N` | Mirrors read at a time; API calls at a time |
