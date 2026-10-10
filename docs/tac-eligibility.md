@@ -17,6 +17,38 @@ CLOWarden configs (`mirror-clowarden.zsh`), and a people export
 credential the way every tool here does — `GITHUB_TOKEN`, `GH_TOKEN`, then
 `gh auth token`.
 
+## The whole run
+
+`election.zsh` is every step in dependency order, so the usual run is one line:
+
+```sh
+./election.zsh                      # window since 2025-10-01
+./election.zsh -n                   # print the commands, run nothing
+./election.zsh --from nominees      # pick up after the clones
+./election.zsh --only voters        # one step
+./election.zsh --since 2025-07-01   # a different window
+```
+
+| Step | What it runs |
+| --- | --- |
+| `repos` | `gh-enterprise-repos` for both enterprises into `results/` |
+| `people` | `gh-org-members` once per enterprise into `peeps/` |
+| `clones` | `clone-repos.zsh` over both reports into `repos/` |
+| `mirror` | `mirror-clowarden.zsh` into `mirror/`, when `reports/clowarden-watched-repos.csv` is there to refresh from |
+| `nominees` | `tac-eligibility --phase authors --phase logins` — the only step that calls the API |
+| `voters` | `tac-eligibility --phase voters --phase write` — the roll, then `hashes.js` |
+
+The TAC is LFDT's, so both lists are scoped to the LFDT export: `--report
+results/lf-decentralized-trust.yaml` for the nominees and
+`peeps/lf-decentralized-trust.yaml` for the voters. The
+openwallet-foundation export is still made and its repositories still mirrored
+— its addresses land in the shared `repos/cache.json`, which is a call the next
+run does not make — but it widens neither list. Both are variables at the top
+of the script (`NOMINEE_REPORTS`, `PEOPLE`) if that changes.
+
+Nothing in the script commits anything, and the steps underneath are what the
+rest of this page describes.
+
 Four phases, each resumable and each writing its result into `repos/`, so a
 phase can be re-run on its own:
 

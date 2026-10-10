@@ -24,6 +24,7 @@ And the scripts that build on their output:
 
 | Script | What it does |
 | --- | --- |
+| `election.zsh` | Runs the whole TAC election pipeline in order — both exports, the clones, the configs, then `hashes.js` |
 | `clone-repos.zsh` | Bare-mirrors every public, non-archived repository a `gh-enterprise-repos` report names into `repos/<org>/<name>` |
 | `drift.zsh` | Compares one organization's export with the CLOWarden `config.yaml` meant to describe it |
 | `mirror-clowarden.zsh` | Clones, or fetches, every CLOWarden config repository into `mirror/<org>/<repo>` |
@@ -77,12 +78,14 @@ Two workflows chain most of the above:
 - **LFDT TAC election eligibility** —
   [docs/tac-eligibility.md](docs/tac-eligibility.md): export the repositories,
   mirror them, count commit authors in the window, union the maintainers, write
-  `hashes.js`.
+  `hashes.js`. `./election.zsh` is that whole run, one step at a time, and
+  `./election.zsh -n` prints the commands without running any of them.
 
 ## Where output goes
 
-`results/`, `reports/`, `repos/` and `mirror/` hold what the tools write:
-exports, reports, bare clones and config checkouts. All four are gitignored,
+`results/`, `reports/`, `peeps/`, `repos/` and `mirror/` hold what the tools
+write: repository exports, reports, people exports, bare clones and config
+checkouts. All five are gitignored,
 because they name real people and real private repositories. Keep it that way —
 every example in the docs is invented for that reason.
 
