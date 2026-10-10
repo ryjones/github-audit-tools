@@ -177,6 +177,10 @@ reconciliation — there is no declared intent to compare against.
 
 `./find-clowarden-configs.zsh results/*.yaml` does that probe and writes the
 list, one line per config found, and names the organizations that have none.
+Candidates come out of the report, so an organization whose config repository
+is archived or private offers none — `hyperledger-aries` keeps an archived
+`governance` — and those organizations get a second pass that asks for each
+candidate name directly.
 
 ```sh
 ./find-clowarden-configs.zsh results/*.yaml   # writes the CSV below

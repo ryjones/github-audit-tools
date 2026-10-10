@@ -17,9 +17,11 @@
 # reports that has no config at all: those declare nothing, so nothing of
 # theirs can be reconciled or counted as a maintainer.
 #
-# Only public, non-archived repositories are in a default report, so a private
-# governance repository is invisible here; export with --visibility all to
-# include one.
+# A default report holds only public, non-archived repositories, so an
+# organization whose config repository is archived or private has nothing to
+# probe -- hyperledger-aries keeps an archived `governance`. Those organizations
+# get a second pass that asks for each candidate name directly, which is why a
+# repository can turn up here that is in no report.
 
 setopt err_exit no_unset pipe_fail
 
@@ -108,6 +110,18 @@ total=$(grep -c . $tmp/candidates || :)
 print -ru2 -- "Probing $total candidate repositories from ${(j:, :)${(@)reports:t}}, $jobs at a time."
 
 xargs -n 1 -P $jobs $SELF --probe-one < $tmp/candidates | sort -f > $tmp/found
+
+# Second pass, for organizations the report could offer no candidate for: ask
+# about each candidate name directly. A name the organization does not have
+# 404s, which costs one call and says so.
+cut -f1 $tmp/found | sort -uf > $tmp/found-orgs
+gaps=(${(f)"$(comm -23 $tmp/orgs $tmp/found-orgs)"})
+if (( $#gaps )); then
+  print -ru2 -- "Probing ${(j:, :)CANDIDATE_REPOS} directly in ${#gaps} organizations the reports name no candidate in."
+  print -rl -- ${^gaps}/${^CANDIDATE_REPOS} > $tmp/direct
+  xargs -n 1 -P $jobs $SELF --probe-one < $tmp/direct >> $tmp/found
+  sort -f -o $tmp/found $tmp/found
+fi
 
 # One line per config, so a run says what it found rather than going quiet.
 while IFS=$'\t' read -r org repo config; do
