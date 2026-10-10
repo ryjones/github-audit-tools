@@ -121,6 +121,11 @@ done
 if (( want[clones] )) && [[ ! -x ./clone-repos.zsh ]]; then
   missing "./clone-repos.zsh is not executable"
 fi
+if (( want[mirror] )); then
+  for script in ./find-clowarden-configs.zsh ./mirror-clowarden.zsh; do
+    [[ -x $script ]] || missing "$script is not executable"
+  done
+fi
 # Fail now rather than after the sweep: the write phase needs the checkout.
 if (( want[voters] )) && [[ ! -d ${OUT:h} ]]; then
   missing "no ${OUT:h}/ checkout to write ${OUT:t} into; clone it here first"
@@ -176,26 +181,18 @@ step_clones() {
   run ./clone-repos.zsh -d $REPOS $REPORTS
 }
 
+# Which repository holds each organization's config, then the checkouts
+# themselves. The list is rebuilt every run rather than cached: an organization
+# added since the last election declares maintainers too, and a stale list
+# drops them silently.
 step_mirror() {
   banner "CLOWarden configs -> $MIRROR/"
-  if [[ -r $WATCHED ]]; then
-    run ./mirror-clowarden.zsh $WATCHED $MIRROR
-    return
-  fi
-  if (( $#opt_dry )); then
-    print -r -- "+ ./mirror-clowarden.zsh $WATCHED $MIRROR"
-    print -ru2 -- "${SELF:t}: $WATCHED is not there yet"
-    return
-  fi
-  if [[ -d $MIRROR ]]; then
-    local have=$(find $MIRROR -maxdepth 3 -name .git -type d | wc -l | tr -d ' ')
-    print -r -- "no $WATCHED to refresh from; using the $have checkout(s) already in $MIRROR/"
-    return
-  fi
-  die "no configs in $MIRROR/ and no $WATCHED to clone them from.
-  Find the config repositories first -- see \"Find what CLOWarden manages\" in
-  docs/clowarden-reconciliation.md -- and leave the list in $WATCHED.
-  The voters step reads $MIRROR/<org>/<repo>."
+  local report
+  for report in $REPORTS; do
+    [[ -r $report ]] || missing "cannot read $report; run the repos step first"
+  done
+  run ./find-clowarden-configs.zsh -o $WATCHED $REPORTS
+  run ./mirror-clowarden.zsh $WATCHED $MIRROR
 }
 
 # `--flag A --flag B`, one occurrence per file, however many there are.

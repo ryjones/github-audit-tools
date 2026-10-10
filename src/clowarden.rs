@@ -15,13 +15,17 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use serde_yaml_ng::Value;
 
-/// One schema, five filenames, in the order the config repositories use them.
-pub const CONFIG_NAMES: [&str; 5] = [
+/// One schema, several filenames, in the order the config repositories use
+/// them. `clowarden.yaml` is the odd one out, used by `KapunSDK/tsc`; without
+/// it that organization reads as declaring nothing.
+pub const CONFIG_NAMES: [&str; 7] = [
     "config.yaml",
     "config.yml",
     "teams.yml",
     "teams.yaml",
     "access-control.yaml",
+    "clowarden.yaml",
+    "clowarden.yml",
 ];
 
 /// "Write access or higher" in CLOWarden's vocabulary. `read` and `triage` are
@@ -382,5 +386,41 @@ repositories:
         let config = config_from("empty", "legacy: true\n");
         assert!(config.teams.is_empty());
         assert!(config.repositories.is_empty());
+    }
+
+    #[test]
+    fn a_mirror_reads_every_spelling_and_names_the_orgs_with_none() {
+        let root = std::env::temp_dir().join(format!("clowarden-mirror-{}", std::process::id()));
+        std::fs::remove_dir_all(&root).ok();
+        let checkout = |org: &str, repo: &str, file: Option<&str>| {
+            let dir = root.join(org).join(repo);
+            std::fs::create_dir_all(dir.join(".git")).expect("checkout");
+            if let Some(file) = file {
+                std::fs::write(
+                    dir.join(file),
+                    "teams:\n  - name: Maintainers\n    members: [alice]\n\
+                     repositories:\n  - name: widget\n    teams: {Maintainers: write}\n",
+                )
+                .expect("write config");
+            }
+        };
+        // KapunSDK's spelling, the enterprise's usual one, and an org whose
+        // config repository holds no config at all.
+        checkout("KapunSDK", "tsc", Some("clowarden.yaml"));
+        checkout("acme", "governance", Some("config.yaml"));
+        checkout("quiet-org", "governance", None);
+
+        let mut warnings = Vec::new();
+        let mirror = read(&root, |warning| warnings.push(warning)).expect("reads");
+        std::fs::remove_dir_all(&root).ok();
+
+        assert_eq!(mirror.orgs(), ["KapunSDK", "acme"]);
+        assert_eq!(mirror.skipped, ["quiet-org"]);
+        assert!(warnings.is_empty(), "a missing config is not a warning");
+        assert_eq!(
+            mirror.rosters()[&("KapunSDK".to_string(), "maintainers".to_string())],
+            ["alice"],
+            "clowarden.yaml is read like the rest"
+        );
     }
 }

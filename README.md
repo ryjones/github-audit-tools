@@ -27,6 +27,7 @@ And the scripts that build on their output:
 | `election.zsh` | Runs the whole TAC election pipeline in order — both exports, the clones, the configs, then `hashes.js` |
 | `clone-repos.zsh` | Bare-mirrors every public, non-archived repository a `gh-enterprise-repos` report names into `repos/<org>/<name>` |
 | `drift.zsh` | Compares one organization's export with the CLOWarden `config.yaml` meant to describe it |
+| `find-clowarden-configs.zsh` | Finds which repository holds each organization's CLOWarden config, and names the organizations that have none |
 | `mirror-clowarden.zsh` | Clones, or fetches, every CLOWarden config repository into `mirror/<org>/<repo>` |
 | `clowarden-history.py` | Derives team membership history from the git history of those configs — years, where the audit log serves about 180 days |
 | `fetch-audit-history.zsh` | Pulls each login's org and team membership history out of the enterprise audit log |

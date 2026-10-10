@@ -154,8 +154,9 @@ done
 
 Expect `all`: CLOWarden acts on every repository in an org, and only *comments*
 in the one repository holding its config. That config repo is almost always
-`<org>/governance`, and the file has four known spellings — `config.yaml`,
-`teams.yml`, `teams.yaml`, `access-control.yaml` — which all share one schema:
+`<org>/governance` — `OpenTokenizedAssetStandard/tsc` and `KapunSDK/tsc` are the
+exceptions — and the file has five known spellings: `config.yaml`, `teams.yml`,
+`teams.yaml`, `access-control.yaml` and `clowarden.yaml`. All share one schema:
 
 ```yaml
 teams:
@@ -174,7 +175,11 @@ reconciliation — there is no declared intent to compare against.
 
 ## 5. Mirror the configs
 
+`./find-clowarden-configs.zsh results/*.yaml` does that probe and writes the
+list, one line per config found, and names the organizations that have none.
+
 ```sh
+./find-clowarden-configs.zsh results/*.yaml   # writes the CSV below
 ./mirror-clowarden.zsh        # defaults to reports/clowarden-watched-repos.csv
 ```
 

@@ -467,7 +467,8 @@ people appear as `initial` twice.
 
 Both kinds of grant a config carries are read: `teams` (maintainers and members)
 and a repository's `collaborators`. All the config spellings seen so far —
-`config.yaml`, `teams.yml`, `teams.yaml`, `access-control.yaml` — share one
+`config.yaml`, `teams.yml`, `teams.yaml`, `access-control.yaml`,
+`clowarden.yaml` — share one
 schema, and a revision that will not parse is skipped rather than guessed at.
 
 YAML is parsed by shelling out to `yq`, so no Python YAML module is needed.
