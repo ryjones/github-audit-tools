@@ -95,23 +95,28 @@ Usage: gh-enterprise-ghsa.zsh [options]
 
 ### Sample
 
+Invented, like every example here: an unpublished advisory is somebody's
+unannounced vulnerability, and a list of repositories that cannot be reported
+to privately is a map. Run it against your own enterprise to see the real
+thing, and think before pasting the output anywhere.
+
 ```
-ORG              REPO          GHSA                 CVE  SEVERITY  STATE   PUBLISHED  SUMMARY
-my-org  widget  GHSA-aaaa-bbbb-cccc  -    MEDIUM    closed  -          Timing side channel in signature ve…
-my-org  gadget  GHSA-dddd-eeee-ffff  -    MEDIUM    closed  -          Out-of-bounds read in the test harn…
+ORG     REPO    GHSA                 CVE            SEVERITY  STATE      PUBLISHED   SUMMARY
+my-org  widget  GHSA-aaaa-bbbb-cccc  CVE-2026-0001  HIGH      published  2026-04-02  Timing side channel in signature ve…
+my-org  gadget  GHSA-dddd-eeee-ffff  -              MEDIUM    closed     -           Out-of-bounds read in the test harn…
 
 ── advisory totals ────────────────────────────────
 advisories       : 2
-with CVE         : 0
-without CVE      : 2
-by state         : closed=2
-by severity      : medium=2
-CVEs             : -
+with CVE         : 1
+without CVE      : 1
+by state         : closed=1 published=1
+by severity      : high=1 medium=1
+CVEs             : CVE-2026-0001
 
-ORG              REPO           PVR         ADVISORIES  VISIBILITY  ARCHIVED
-my-org  .github        enabled ✓   -           public      -
+ORG     REPO     PVR         ADVISORIES  VISIBILITY  ARCHIVED
+my-org  .github  enabled ✓   -           public      -
 my-org  widget   enabled ✓   1           public      -
-my-org  gadget       DISABLED ✗  -           public      -
+my-org  gadget   DISABLED ✗  1           public      -
 ```
 
 ## Repo posture (`-R`)

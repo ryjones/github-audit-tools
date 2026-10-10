@@ -24,7 +24,7 @@
 #   ./gh-enterprise-ghsa.zsh -e my-enterprise -s published
 #   ./gh-enterprise-ghsa.zsh -f csv > advisories.csv
 #   ./gh-enterprise-ghsa.zsh -f json | jq '.[] | select(.cve_id)'
-#   ./gh-enterprise-ghsa.zsh -o my-org -o my-org
+#   ./gh-enterprise-ghsa.zsh -o my-org -o other-org
 #   ./gh-enterprise-ghsa.zsh -c                             # only CVE-assigned
 #   ./gh-enterprise-ghsa.zsh -R                             # + repo PVR posture
 #   ./gh-enterprise-ghsa.zsh -RD                            # PVR-disabled repos only
