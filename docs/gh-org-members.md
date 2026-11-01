@@ -163,6 +163,80 @@ The note is a prompt to check, not a verdict: compare `organizations` against
 the enterprise's organization list in the web UI, and re-run with a credential
 that reaches all of them. `gh auth token` is usually that credential.
 
+## An organization with its own credential
+
+An organization can turn classic personal access tokens off. Every endpoint it
+owns then answers 403 — the organization, its repositories, a file in one of
+them, its advisories — with the reason in the body:
+
+```
+`LFDT-Lineth` forbids access via a personal access token (classic).
+Please use a GitHub App, OAuth App, or a personal access token with
+fine-grained permissions.
+```
+
+That is not a thinner export, it is no export: nothing about the organization
+can be read with that credential. One such organization is no reason to put a
+fine-grained token on the whole run, which would have to be granted,
+organization by organization, everything the classic one already has. So each
+request goes out with the credential its organization calls for.
+
+Two things have to be in place.
+
+**The token, in the environment** as `GITHUB_<LOGIN>_TOKEN` — the login
+uppercased with anything that is not a letter or a digit turned into an
+underscore, so `GITHUB_LFDT_LINETH_TOKEN` for `LFDT-Lineth`. That one name is
+the only one derived, because it is looked for on every organization a run
+touches: a second guess, such as the login's last segment, would have
+`GITHUB_LABS_TOKEN` quietly claim `hiero-ledger-labs`, `hyperledger-labs` and
+two more. A token kept under some other name is named outright in the file
+below.
+
+**The organization, in `org-tokens.txt`**, tracked beside the scripts:
+
+```
+# One organization per line; LOGIN = VARIABLE to name a different variable.
+LFDT-Lineth
+```
+
+Naming it is not redundant, because an enterprise listing will not name it.
+The GraphQL query returns a **null** where the organization should be, plus a
+message saying why, and nowhere in the response is its login:
+
+```
+  warning: [FORBIDDEN] `LFDT-Lineth` forbids access via a personal access token
+  (classic). … (at enterprise.organizations.nodes.38)
+  found 57 organization(s)
+  + LFDT-Lineth (declared, token from GITHUB_LFDT_LINETH_TOKEN)
+[58/58] lf-decentralized-trust/LFDT-Lineth
+```
+
+Before that file existed the export was 57 of 58 organizations with nothing in
+it to say which one was missing — only that warning, scrolled past, in a run
+that reported success. The nulls are now counted, and a run says so when it
+holds more of them than the file accounts for.
+
+Where the credential comes from, per request:
+
+| Request | Credential |
+| --- | --- |
+| The enterprise itself — its organizations, its people | the run's main credential; a fine-grained token cannot read enterprise data at all |
+| A REST path under `orgs/<login>/…` or `repos/<login>/…` | that organization's, chosen from the path, so no caller passes one |
+| A GraphQL query about one organization | that organization's, from the query's `login` or `org` variable |
+| Everything else | the run's main credential |
+
+An organization's token has its own scopes and its own rate-limit budget, so
+neither is recorded as the run's: `token_scopes` in a report stays the main
+credential's.
+
+What a fine-grained token then needs, granted per organization: **Metadata**
+read for the organization and its repositories, **Administration** read for
+repository settings such as private vulnerability reporting, and **Members**
+read for people and teams. Without the last one `gh-org-members` fails on that
+organization with `Resource not accessible by personal access token (at
+organization.membersWithRole)` — which is the token's own permissions, not the
+classic-token refusal, and worth telling apart.
+
 ## Feeding the audit-history sweep
 
 `fetch-audit-history.zsh` walks a list of logins and pulls each one's org and

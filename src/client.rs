@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,6 +26,18 @@ pub struct GithubClient {
     max_retries: u32,
     state: Mutex<RateState>,
     oauth_scopes: Mutex<Option<String>>,
+    /// One HTTP client per organization that has its own token, keyed by
+    /// lowercased login and built the first time that organization is asked
+    /// for. See `crate::token`: an organization with classic personal access
+    /// tokens turned off answers 403 to everything otherwise.
+    org_http: Mutex<HashMap<String, OrgAuth>>,
+}
+
+/// An organization's own credential, or the knowledge that it has none.
+#[derive(Clone)]
+struct OrgAuth {
+    http: Option<reqwest::Client>,
+    from: Option<String>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -100,7 +113,70 @@ impl GithubClient {
             max_retries,
             state: Mutex::new(RateState::default()),
             oauth_scopes: Mutex::new(None),
+            org_http: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// The HTTP client to send an organization's requests with, and the
+    /// variable its token came from. `None` for the organization means the
+    /// run's main credential, which is the answer for all but one or two.
+    fn auth_for(&self, org: Option<&str>) -> OrgAuth {
+        let Some(org) = org else {
+            return OrgAuth {
+                http: None,
+                from: None,
+            };
+        };
+        let key = org.to_lowercase();
+        let mut cache = self.org_http.lock().expect("org client mutex poisoned");
+        if let Some(found) = cache.get(&key) {
+            return found.clone();
+        }
+        let resolved = match crate::token::for_org(org) {
+            Some((from, token)) => match Self::http_with_token(&token) {
+                Ok(http) => OrgAuth {
+                    http: Some(http),
+                    from: Some(from),
+                },
+                Err(err) => {
+                    eprintln!("  warning: {from} is set but unusable as a credential: {err:#}");
+                    OrgAuth {
+                        http: None,
+                        from: None,
+                    }
+                }
+            },
+            None => OrgAuth {
+                http: None,
+                from: None,
+            },
+        };
+        cache.insert(key, resolved.clone());
+        resolved
+    }
+
+    /// The variable this organization's token comes from, if it has one of its
+    /// own. Resolving it is what tells us, so this also primes the cache.
+    pub fn org_token_from(&self, org: &str) -> Option<String> {
+        self.auth_for(Some(org)).from
+    }
+
+    fn http_with_token(token: &str) -> Result<reqwest::Client> {
+        let mut headers = reqwest::header::HeaderMap::new();
+        let mut auth = reqwest::header::HeaderValue::from_str(&format!("bearer {token}"))
+            .context("token contains characters that are not valid in an HTTP header")?;
+        auth.set_sensitive(true);
+        headers.insert(reqwest::header::AUTHORIZATION, auth);
+        reqwest::Client::builder()
+            .user_agent(concat!(
+                env!("CARGO_PKG_NAME"),
+                "/",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .default_headers(headers)
+            .timeout(Duration::from_secs(60))
+            .build()
+            .context("failed to build HTTP client")
     }
 
     pub fn rate_state(&self) -> RateState {
@@ -125,14 +201,28 @@ impl GithubClient {
     /// single field is inaccessible) are reported on stderr rather than
     /// aborting the run, so one unreadable org does not lose the whole export.
     pub async fn query<T: DeserializeOwned>(&self, query: &str, variables: Value) -> Result<T> {
+        self.query_as(None, query, variables).await
+    }
+
+    /// The same, for a query about one organization, which may have a token of
+    /// its own. `org` is the login the query is about, not a filter: it only
+    /// chooses the credential.
+    pub async fn query_as<T: DeserializeOwned>(
+        &self,
+        org: Option<&str>,
+        query: &str,
+        variables: Value,
+    ) -> Result<T> {
         let body = json!({ "query": query, "variables": variables });
+        let auth = self.auth_for(org);
+        let http = auth.http.as_ref().unwrap_or(&self.http);
         let mut attempt = 0u32;
 
         loop {
             attempt += 1;
             self.await_budget().await;
 
-            let sent = self.http.post(&self.endpoint).json(&body).send().await;
+            let sent = http.post(&self.endpoint).json(&body).send().await;
 
             let response = match sent {
                 Ok(response) => response,
@@ -145,11 +235,21 @@ impl GithubClient {
             };
 
             let status = response.status();
-            self.record_headers(response.headers());
+            // An organization's own token has its own scopes and its own
+            // budget; neither is what the run as a whole is spending, so only
+            // the main credential's headers are recorded.
+            if auth.http.is_none() {
+                self.record_headers(response.headers());
+            }
             let retry_after = header_u64(response.headers(), "retry-after");
 
             if status.as_u16() == 401 {
-                bail!("GitHub rejected the token (401 Unauthorized); check GITHUB_TOKEN");
+                match &auth.from {
+                    Some(from) => bail!("GitHub rejected the token in {from} (401 Unauthorized)"),
+                    None => {
+                        bail!("GitHub rejected the token (401 Unauthorized); check GITHUB_TOKEN")
+                    }
+                }
             }
             if status.as_u16() == 404 {
                 bail!("GraphQL endpoint not found (404): {}", self.endpoint);

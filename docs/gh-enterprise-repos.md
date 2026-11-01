@@ -186,15 +186,47 @@ its counts are partial.
 ## Cloning what a report lists
 
 `clone-repos.zsh` bare-clones every public, non-archived repository in a report
-into `repos/<org>/<name>`, over https. The report can be YAML or JSON, and
+into `<root>/<org>/<name>`, over https. The report can be YAML or JSON, and
 several can be given at once: they are merged, and a repository two of them both
-name is cloned once. It needs `git`, `yq` and `jq`, and `repos/` is gitignored.
+name is cloned once. It needs `git`, `yq` and `jq`.
+
+The whole arrangement is three stages — **github.com → the cache → Forgejo**.
+The middle one is a tree of bare mirrors that nothing else owns: everything in
+it can be fetched again, so it is a cache, and keeping one tree across runs is
+what makes the second run a fetch instead of a clone. Both scripts resolve its
+root the same way, so they always work on the same tree:
+
+1. `-d DIR`, if given;
+2. `$GITHUB_MIRROR_DIR`, if set;
+3. `/Volumes/graid/github-mirror`, when that array is mounted;
+4. `repos/` beside the script otherwise — gitignored, and the fallback on a
+   machine without the array.
+
+Forgejo is fed from the cache, never from github.com directly, which is why
+`--forgejo` needs the trees and blobs the mirror holds.
 
 ```sh
 gh-enterprise-repos --enterprise lf-decentralized-trust -d reports
 ./clone-repos.zsh reports/lf-decentralized-trust.yaml
 ./clone-repos.zsh reports/*.yaml            # several enterprises into one tree
 ```
+
+`--org LOGIN` skips the report: it runs `gh-enterprise-repos` for that
+organization itself, into a listing inside the run's temporary directory, and
+goes on as if that listing had been given. Repeat it for several organizations,
+and mix it with reports named on the command line if you like.
+
+```sh
+./clone-repos.zsh --forgejo --org LFDT-Panurus
+./clone-repos.zsh --org LFDT-Panurus --org LFDT-IPRAM -n
+```
+
+It uses `target/release/gh-enterprise-repos`, then the debug build, then
+whatever is on `PATH`, and the listing's own defaults are the ones this script
+wants anyway: public, not archived, forks included. The listing itself is not
+kept — `gh-enterprise-repos --org LOGIN -d reports` is still how to keep one,
+and an enterprise still goes through a report, since `--org` takes one
+organization at a time.
 
 The clones are mirrors meant for counting activity per account over a time
 period, so they are fetched with `--filter=tree:0`: every commit with its
@@ -210,16 +242,255 @@ deleted or made private since the report fails in its own line rather than
 waiting for a password. Failures are summarized at the end and set the exit
 status; the other clones still happen.
 
+A repository with no commits yet is reported as the empty repository it is —
+`empty repository: no branches or tags to push` — and counted as such in the
+summary. There is nothing to clone and nothing to push, and no repository is
+created on Forgejo for it; it is a fact about the upstream, not a failure.
+
+A clone of a large repository, the refetch of a filtered one, or a push of a
+few hundred tags can take minutes with nothing to show for it. Every
+`--progress` seconds, 10 by default, one line names the repositories that are
+still working and what they are doing:
+
+```
+  … still working: trustoverip/spec-up-t (pushing every branch and tag, 2m41s), trustoverip/spec-up-t-website (cloning from github.com, 24s)
+```
+
+Only the ones slower than that interval are named, longest first and three at a
+time, so a run of small repositories prints nothing extra. Forgejo writes a
+release row per tag, so the first push of a tag-heavy repository is usually the
+slowest thing in a run — `trustoverip/spec-up-t`, with 29 branches and 216
+tags, took four minutes while the other 62 repositories finished in twenty
+seconds.
+
 A repository named `.github` is cloned as `_github`, since a dotted directory
-hides itself from globs and most tooling.
+hides itself from globs and most tooling. On Forgejo it keeps its real name.
 
 | Flag | Meaning |
 | --- | --- |
-| `-d DIR` | Where the clones go (default `repos/` beside the script) |
+| `--org LOGIN` | List this organization with `gh-enterprise-repos` and clone what it names; repeatable, and no `REPORT` is then needed |
+| `-d DIR` | Where the clones go (default: the mirror cache, `/Volumes/graid/github-mirror` on this machine) |
 | `-j JOBS` | Clones at a time (default: the machine's CPU count) |
 | `--full` | Clone trees and blobs too, not just commit history |
+| `--forgejo` | Also create each organization and repository on a Forgejo instance and push every branch and tag into it; implies `--full` |
+| `--forgejo-url URL` | The instance (default `$FORGEJO_URL`, else `https://forgejo.lan.ryjones.dev`) |
+| `--progress SECS` | How often to name the repositories that are still working (default 10; `0` says nothing until each one finishes) |
 | `-n` | List what would be cloned, with its destination, and stop |
-| `REPORT` | The reports to read, YAML or JSON; several are merged |
+| `--print-root` | Print the mirror root a run would use, and stop — this script owns that decision, and `election.zsh` asks it rather than keeping its own copy |
+| `REPORT` | The reports to read, YAML or JSON; several are merged, and so are any `--org` listings |
+
+### Private and internal repositories
+
+Public repositories by default, which is also what a default report holds.
+`--visibility` takes the rest, in the same four words `gh-enterprise-repos`
+uses:
+
+```sh
+./gh-enterprise-repos -e lf-decentralized-trust --visibility all   # the report
+./clone-repos.zsh --visibility all results/*.yaml                  # the clones
+./clone-repos.zsh --visibility private results/*.yaml              # only those
+```
+
+Both halves have to ask for it: a report made without `--visibility` holds
+public repositories only, so `--visibility all` over that report finds exactly
+what `--visibility public` would.
+
+A private or an internal repository is cloned over **ssh**, with the key
+github.com already has — `ssh://git@github.com/<org>/<name>.git` — while public
+ones stay on https. github.com will not serve a private repository over https
+without a credential, and nothing here will put a token in a URL, where
+`remote.origin.url` on disk and `ps` would both hold it. `GIT_TERMINAL_PROMPT=0`
+and ssh's `BatchMode=yes` keep a missing key a failure rather than a prompt
+that waits forever in a parallel run.
+
+Two things worth knowing before mirroring a whole enterprise this way:
+
+- **Repositories on the instance are created the same as ever** — the push does
+  not mark a mirror of a private repository private on Forgejo. Whoever can
+  reach the instance can read it.
+- **GitHub's per-advisory forks are never mirrored.** Drafting a security
+  advisory makes a temporary private fork named for it,
+  `<repo>-ghsa-xxxx-xxxx-xxxx`, to write the fix in. It is nobody's repository
+  — not configured, not maintained — and what it holds is an unpublished fix to
+  someone else's advisory, which is not ours to copy anywhere. They report
+  `fork: false`, so only the name gives them away, and they are the bulk of
+  what `--visibility private` would otherwise find: 33 of the 56 private
+  repositories in the LFDT enterprise on 2026-10-22, against 23 real ones. The
+  count left out is reported rather than dropped quietly:
+
+  ```
+  23 private, non-archived repositories (33 advisory private forks left out)
+  from lf-decentralized-trust.yaml, … would be mirrored into …
+  ```
+
+## A Forgejo copy of the enterprise
+
+`--forgejo` gives a Forgejo instance a copy of everything the report names:
+the organization, created public if it is not there, the repository inside it,
+and then every branch and every tag, pushed from the clone on disk.
+
+```sh
+./clone-repos.zsh --forgejo reports/lf-decentralized-trust.yaml
+./clone-repos.zsh --forgejo --org LFDT-Panurus     # one org, without a report
+./clone-repos.zsh --forgejo -n reports/*.yaml      # the plan, and nothing else
+```
+
+These are **not** Forgejo mirrors. A pull mirror would have the instance fetch
+from github.com on a schedule, keep the repository read-only, and stop being a
+copy the day the network, the token or the upstream repository goes away. Each
+repository here is an ordinary Forgejo repository, filled from the clone, which
+stands on its own afterwards and can be pushed to, branched and forked like any
+other.
+
+What is and is not copied:
+
+- **Every branch and every tag**, forced, with anything the upstream no longer
+  has pruned off the Forgejo side on the next run.
+- **Not `refs/pull/*`.** GitHub advertises a ref per pull request — nearly five
+  thousand of them on `hyperledger/fabric` alone — and Forgejo keeps its own
+  pull requests in that same namespace.
+- **The default branch**, set from the clone's `HEAD`, which is what GitHub
+  advertises as the default; the report's `default_branch` is the fallback.
+- **The description**, from the report, when the repository is created. It is
+  not written again afterwards, so an edit on Forgejo survives later runs.
+- **The git-lfs objects**, fetched from github.com and uploaded to the
+  instance before the refs that point at them. See below.
+- **No releases, no issues, no pull requests, no wiki.** A bare clone holds
+  none of those; this copies git, not GitHub.
+
+`--forgejo` implies `--full`, because a `--filter=tree:0` clone has no trees or
+blobs to push, only a promise to fetch them from github.com later. A clone that
+was already fetched that way is refetched whole the first time it is pushed,
+which is the slow part of a first `--forgejo` run over a tree cloned earlier.
+
+Two credentials, for two jobs:
+
+| What | How | Where it comes from |
+| --- | --- | --- |
+| Creating the org, the repo, and setting the default branch | REST, over https | `FORGEJO_TOKEN`, else the file named by `FORGEJO_TOKEN_FILE` (default `~/.config/forgejo/token.txt`) |
+| The push itself | git, over ssh | the ssh key registered on the instance; `FORGEJO_SSH_USER` is the user, `git` by default |
+
+The token needs `write:organization` and `write:repository`. It is never passed
+as an argument — it goes into a `0600` curl config file for the run — because an
+argument is in the process list for every account on the machine. The push is
+over ssh rather than https for the same reason.
+
+An organization that cannot be created is reported, and its repositories are
+left out of the run rather than failing one by one; if none of them can be
+created, the run stops before cloning anything.
+
+### Repositories that use git-lfs
+
+A `git clone --mirror` copies a git-lfs pointer blob — a hundred-odd bytes
+naming a hash — and not one byte of the file it stands for. A push of such a
+clone to an instance that speaks git-lfs, as Forgejo does, is not merely
+incomplete: git-lfs refuses the whole push, every ref with it, and what is left
+behind is a repository created on the instance with nothing in it.
+
+```
+Git LFS upload failed:
+  (missing) test-data/precomputed_shares.json (86aa36e8…)
+hint: Your push was rejected due to missing or corrupt local objects.
+error: failed to push some refs to 'ssh://…/LFDT-Lockness/cggmp21.git'
+```
+
+So a repository holding pointers gets two transfers the others do not: the
+objects down from github.com into the clone, then up to the instance, in that
+order, so the copy there is never briefly one whose files cannot be checked
+out. Both show up as their own stage in the progress lines, and the run says
+how many objects it moved:
+
+```
+[12/58] LFDT-Lockness/cggmp21 updated, 1 ref fetched, forgejo 50 refs updated, 1 lfs object mirrored
+   40s    … still working: LFDT-Lockness/cggmp21 (fetching 1 git-lfs object from github.com, 1m20s)
+```
+
+It is worth knowing what this costs. The scan that finds the pointers walks
+every ref, and so does the upload, which is slow out of proportion to the bytes
+— a 110 KB payload across 248 refs took 78 seconds. The payload itself can be
+large: of the 648 repositories in the LFDT mirror only four use git-lfs at all,
+but one of those four carries 5.5 GB in 112 objects. Repositories with no
+pointers pay nothing but the scan, which for them is instant.
+
+This is done here rather than left to git-lfs's own `pre-push` hook. That hook
+is ambient — `git lfs install` writes it into whatever `core.hooksPath` points
+at, so whether a mirror push carried its objects would depend on how the
+machine running the script happened to be set up — and when an object is
+missing it takes the ref push down with it. `fj_push` passes `--no-verify` for
+the same reason: a mirror push has no business running hooks. If `git-lfs` is
+not installed at all, both scripts say so at the start of a `--forgejo` run,
+because nothing else could then tell that a repository had arrived as pointers
+with nothing behind them.
+
+### What is never pushed over
+
+The push is forced and prunes, which is right for a copy of GitHub and wrong
+for anything else. Two things stop it:
+
+- **`forgejo-skip.txt`**, beside the scripts: one `ORG/NAME` per line,
+  case-insensitive, `#` for comments. A repository named there is still cloned
+  from github.com, but never pushed, because the copy on the instance is the
+  maintained one rather than a copy. `FORGEJO_SKIP_FILE` names a different
+  file. Both scripts print how many repositories the list holds.
+- **A copy that has moved on its own.** Before each push, `git ls-remote`
+  against the instance is checked against the clone, and if any branch or tag
+  there points at an object the clone does not have, that repository is left
+  alone with the ref named:
+
+  ```
+      LFDT-way/discord-stats: refs/heads/main on the instance is not in the clone; not pushing over it
+  ```
+
+Both are counted as `left alone` in the summary rather than as failures. The
+reason both exist: on 2026-10-21 a run over `LFDT-way` forced
+`LFDT-way/discord-stats` back to its github.com head and threw away that day's
+generated reports, which another job had pushed there an hour earlier. The
+list says which repositories are like that; the `ls-remote` check catches the
+ones nobody thought to list.
+
+## Updating the clones
+
+`update-repos.zsh` is the second run and every run after it: it fetches each
+clone from github.com again and pushes what changed on to Forgejo.
+
+```sh
+./update-repos.zsh                          # every clone in the mirror tree
+./update-repos.zsh hyperledger              # one organization
+./update-repos.zsh hyperledger/fabric trustoverip
+./update-repos.zsh --local-only             # the clones only, leave Forgejo
+./update-repos.zsh --no-fetch               # Forgejo only, from what is on disk
+```
+
+It reads no report. What it updates is what is on disk, found by walking
+`DIR/<org>/<name>` for bare clones, and each clone's own `remote.origin.url`
+says which GitHub repository it is — so one stored as `_github` is still pushed
+to Forgejo as `.github`. A repository that has appeared on GitHub since the
+last run is therefore not here: refresh the report and re-run
+`clone-repos.zsh`, which skips what it already has.
+
+| Flag | Meaning |
+| --- | --- |
+| `-d DIR` | The clone tree to update (default: the same mirror cache `clone-repos.zsh` writes) |
+| `-j JOBS` | Repositories at a time (default: the machine's CPU count) |
+| `-n` | List what would be updated, and which clones would be refetched whole, then stop |
+| `--local-only` | Fetch the clones from github.com and stop; no Forgejo, and no refetch of a filtered clone |
+| `--no-fetch` | Push to Forgejo from the clones as they are; no fetch |
+| `--forgejo-url URL` | The instance (default `$FORGEJO_URL`, else `https://forgejo.lan.ryjones.dev`) |
+| `--progress SECS` | How often to name the repositories that are still working (default 10; `0` says nothing until each one finishes) |
+| `SLUG` | Limit to these repositories, each an org or an `org/name`; either the real name or the name on disk matches, and case is ignored |
+
+Each line says what happened to one repository — how many refs the fetch
+brought, how many the push moved, whether the clone had to be refetched whole,
+and how big it is now. A clone with no branches and no tags is reported as the
+empty repository it is, and `forgejo-skip.txt` and the `ls-remote` check above
+apply here too: this is the script that runs often, so it is the one that would
+otherwise push over a copy that has moved on its own. Failures are summarized at the end and set the exit
+status, with the fetch and the push counted separately: a push that fails does
+not cost the fetch that succeeded.
+
+`forgejo-lib.zsh`, beside both scripts, holds what they share: the API calls,
+the push, the refetch, the two guards above, and the progress bookkeeping. It
+is sourced, not run.
 
 ## TAC election hashes
 
@@ -234,6 +505,13 @@ simply does not return it, the listing covers the organizations that came back,
 and nothing in the file says one is missing. An organization it can see but
 cannot see *into* is worse: that one answers with an empty repository list, so
 it appears in `organizations` holding nothing at all.
+
+A third kind is an organization that refuses the credential outright, by having
+turned classic personal access tokens off. It comes back as a null in
+`enterprise.organizations`, counted but never named, and reading it needs a
+token of its own — see
+[an organization with its own credential](gh-org-members.md#an-organization-with-its-own-credential)
+and `org-tokens.txt`.
 
 `authenticated_as` and `token_scopes` record whose view produced the file —
 `token_scopes` is absent for fine-grained PATs and App tokens, which do not

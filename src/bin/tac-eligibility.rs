@@ -8,22 +8,37 @@
 //!               addresses resolved to GitHub logins through the API.
 //!   voters   -- eligible to vote: maintainers, meaning everyone a CLOWarden
 //!               config puts in a team holding write, maintain or admin on
-//!               some repository, plus the organization owners.
+//!               some repository, plus the organization owners -- and then only
+//!               those who could also stand, so the vote and the nomination
+//!               rest on the same window.
 //!
 //! Four phases, each resumable, each writing its result beside the mirrors so
 //! the next one can be re-run on its own:
 //!
+//! Both rolls then drop whoever the tracked `staff.yaml` at the root of this
+//! repository names -- foundation staff, duplicate accounts, a bot the code
+//! does not recognize. `--seed-staff` writes the first cut of that file from
+//! the `*staff` and `*bot` teams and stops, so it can be edited before it
+//! counts.
+//!
 //!   authors  mirrors            -> repos/authors.json   (no network)
 //!   logins   authors.json       -> repos/logins.json    (GitHub API, cached)
-//!   voters   configs + people   -> repos/voters.json    (no network)
+//!   voters   configs + people,
+//!            and logins.json     -> repos/voters.json    (no network)
 //!   write    the two lists      -> tac-eligibility-check/hashes.js
+//!                              -> repos/voters.csv     (Helios upload)
+//!
+//! The voters phase also records, for every repository a config declares
+//! access on, the newest commit in its mirror and how many commits fall in the
+//! window -- the access is what makes voters, so a repository nobody has
+//! touched since the last election is worth being able to see.
 //!
 //! `repos/` may hold the mirrors of more than one enterprise, so pass --report
 //! (YAML or JSON, repeatable) to count only the repositories that report names.
 //! Without it, every mirror under repos/ counts.
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result, bail};
@@ -33,7 +48,9 @@ use futures::stream::StreamExt;
 use github_audit_tools::members_model::Report;
 use github_audit_tools::rest_client::{self, GhClient};
 use github_audit_tools::tac::{self, Window};
-use github_audit_tools::{clowarden, tac_authors, tac_hashes, tac_logins, tac_voters};
+use github_audit_tools::{
+    clowarden, tac_activity, tac_authors, tac_hashes, tac_helios, tac_logins, tac_staff, tac_voters,
+};
 use tac_authors::Authors;
 use tac_logins::{Cache, Logins, Resolved};
 use tac_voters::Voters;
@@ -91,6 +108,17 @@ struct Args {
     #[arg(long, value_name = "DIR", default_value = "mirror")]
     clowarden: PathBuf,
 
+    /// Logins to keep off both rolls: YAML or JSON, a list, a `login: reason`
+    /// mapping, or groups of logins. Default: staff.yaml, staff.yml or
+    /// staff.json at the root of this repository, whichever exists.
+    #[arg(long, value_name = "FILE")]
+    staff: Option<PathBuf>,
+
+    /// Write the first cut of that file -- everyone on a team whose name ends
+    /// in staff, bot or bots -- and stop. Never overwrites.
+    #[arg(long)]
+    seed_staff: bool,
+
     /// The hashes.js to write (default: the checkout in this repository).
     #[arg(
         long,
@@ -98,6 +126,11 @@ struct Args {
         default_value = "tac-eligibility-check/hashes.js"
     )]
     out: PathBuf,
+
+    /// The Helios bulk voter upload to write -- `github,<login>` per voter.
+    /// Default: voters.csv beside the other phase files under --repos.
+    #[arg(long, value_name = "FILE")]
+    csv: Option<PathBuf>,
 
     /// Mirrors read at a time.
     #[arg(long, value_name = "N")]
@@ -123,6 +156,7 @@ struct Paths {
     voters: PathBuf,
     cache: PathBuf,
     aliases: PathBuf,
+    csv: PathBuf,
 }
 
 fn main() -> Result<()> {
@@ -133,9 +167,24 @@ fn main() -> Result<()> {
         voters: args.repos.join("voters.json"),
         cache: args.repos.join("cache.json"),
         aliases: args.repos.join("aliases.json"),
+        csv: args
+            .csv
+            .clone()
+            .unwrap_or_else(|| args.repos.join("voters.csv")),
     };
     std::fs::create_dir_all(&args.repos)
         .with_context(|| format!("creating {}", args.repos.display()))?;
+
+    let staff = match &args.staff {
+        Some(path) => tac_staff::Staff::open_at(path)?,
+        None => tac_staff::Staff::open(Path::new("."))?,
+    };
+    if args.seed_staff {
+        return seed_staff(&args);
+    }
+    if let Some(source) = staff.source() {
+        println!("{} logins kept off both rolls by {source}", staff.len());
+    }
 
     let wanted: Vec<Phase> = if args.phase.is_empty() {
         vec![Phase::Authors, Phase::Logins, Phase::Voters, Phase::Write]
@@ -150,8 +199,8 @@ fn main() -> Result<()> {
         println!("== {} ==", name_of(phase));
         match phase {
             Phase::Authors => authors(&args, &paths)?,
-            Phase::Logins => logins(&args, &paths)?,
-            Phase::Voters => voters(&args, &paths)?,
+            Phase::Logins => logins(&args, &paths, &staff)?,
+            Phase::Voters => voters(&args, &paths, &staff)?,
             Phase::Write => write(&args, &paths)?,
         }
     }
@@ -214,11 +263,7 @@ fn authors(args: &Args, paths: &Paths) -> Result<()> {
         );
     }
 
-    let jobs = args.jobs.unwrap_or_else(|| {
-        std::thread::available_parallelism()
-            .map(|n| n.get())
-            .unwrap_or(8)
-    });
+    let jobs = jobs(args);
     let sweep = tac_authors::sweep(
         &found,
         &args.since,
@@ -252,6 +297,36 @@ fn authors(args: &Args, paths: &Paths) -> Result<()> {
     Ok(())
 }
 
+/// Every people export, in the order they were given. One line each: a run
+/// that reads two files should say so, since a missing one costs voters
+/// quietly.
+fn read_exports(paths: &[PathBuf]) -> Result<Vec<(String, Report)>> {
+    let mut exports: Vec<(String, Report)> = Vec::new();
+    for path in paths {
+        let text = std::fs::read_to_string(path)
+            .with_context(|| format!("cannot read {}", path.display()))?;
+        let export: Report = serde_yaml_ng::from_str(&text)
+            .with_context(|| format!("{} is not a gh-org-members export", path.display()))?;
+        println!(
+            "{}: {} people across {} organizations",
+            path.display(),
+            export.people.len(),
+            export.organizations.len()
+        );
+        exports.push((path.display().to_string(), export));
+    }
+    Ok(exports)
+}
+
+/// Mirrors read at a time: what `--jobs` says, or one per core.
+fn jobs(args: &Args) -> usize {
+    args.jobs.unwrap_or_else(|| {
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(8)
+    })
+}
+
 fn window(args: &Args) -> Window {
     Window {
         since: args.since.clone(),
@@ -261,7 +336,7 @@ fn window(args: &Args) -> Window {
 
 // ---------------------------------------------------------------------- logins
 
-fn logins(args: &Args, paths: &Paths) -> Result<()> {
+fn logins(args: &Args, paths: &Paths, staff: &tac_staff::Staff) -> Result<()> {
     let authored: Authors = tac::read_json(&paths.authors).ok_or_else(|| {
         anyhow::anyhow!(
             "no {}; run the authors phase first",
@@ -302,25 +377,36 @@ fn logins(args: &Args, paths: &Paths) -> Result<()> {
         cache.save()?;
     }
 
-    let (logins, bots, unresolved) = tac_logins::accounts(&authored.emails, &cache, &aliases);
+    let found = tac_logins::accounts(&authored.emails, &cache, &aliases, staff);
     tac::write_json(
         &paths.logins,
         &Logins {
             window: authored.window,
-            logins: logins.clone(),
-            bots_dropped: bots.clone(),
-            unresolved: unresolved.clone(),
+            logins: found.logins.clone(),
+            bots_dropped: found.bots_dropped.clone(),
+            staff_dropped: found.staff_dropped.clone(),
+            unresolved: found.unresolved.clone(),
         },
     )?;
     println!(
-        "\n{} accounts ({newly_resolved} newly resolved, {} bots dropped), \
+        "\n{} accounts ({newly_resolved} newly resolved, {} bots dropped{}), \
          {} addresses with no account -> {}",
-        logins.len(),
-        bots.len(),
-        unresolved.len(),
+        found.logins.len(),
+        found.bots_dropped.len(),
+        dropped_note(&found.staff_dropped),
+        found.unresolved.len(),
         paths.logins.display()
     );
     Ok(())
+}
+
+/// `, 14 by staff.yaml` -- or nothing at all, which is the usual case.
+fn dropped_note(staff_dropped: &[String]) -> String {
+    if staff_dropped.is_empty() {
+        String::new()
+    } else {
+        format!(", {} by the staff file", staff_dropped.len())
+    }
 }
 
 /// Ask GitHub about each address, `--api-jobs` at a time.
@@ -438,29 +524,14 @@ async fn lookup(client: &GhClient, sample: &str) -> Result<Option<String>> {
 
 // ---------------------------------------------------------------------- voters
 
-fn voters(args: &Args, paths: &Paths) -> Result<()> {
+fn voters(args: &Args, paths: &Paths, staff: &tac_staff::Staff) -> Result<()> {
     if !args.clowarden.is_dir() {
         bail!(
             "no CLOWarden mirror at {}; run ./mirror-clowarden.zsh",
             args.clowarden.display()
         );
     }
-    // Every export, in the order they were given. One line each: a run that
-    // reads two files should say so, since a missing one costs voters quietly.
-    let mut exports: Vec<(String, Report)> = Vec::new();
-    for path in &args.people {
-        let text = std::fs::read_to_string(path)
-            .with_context(|| format!("cannot read {}", path.display()))?;
-        let export: Report = serde_yaml_ng::from_str(&text)
-            .with_context(|| format!("{} is not a gh-org-members export", path.display()))?;
-        println!(
-            "{}: {} people across {} organizations",
-            path.display(),
-            export.people.len(),
-            export.organizations.len()
-        );
-        exports.push((path.display().to_string(), export));
-    }
+    let exports = read_exports(&args.people)?;
 
     let mirror = clowarden::read(&args.clowarden, |warning| eprintln!("{warning}"))?;
     let skipped = mirror.skipped.len();
@@ -475,7 +546,38 @@ fn voters(args: &Args, paths: &Paths) -> Result<()> {
         }
     );
 
-    let (voters, combinations) = tac_voters::compute(&mirror, &exports);
+    // What the configs declare access on, and whether anything still happens
+    // there. The access is what makes voters, so a repository nobody has
+    // touched since the last election should be visible as one: the newest
+    // commit and the window count go into the file beside the access itself.
+    let mut repositories = tac_activity::declared(&mirror);
+    tac_activity::fill(
+        &mut repositories,
+        &args.repos,
+        &args.since,
+        args.until.as_deref(),
+        jobs(args),
+        |warning| eprintln!("{warning}"),
+    )?;
+    let activity = tac_activity::summarize(&repositories);
+    println!(
+        "{} repositories with access declared, {} of them write or better: \
+         {} with no commit in the window, {} with no mirror to read",
+        activity.declared, activity.write, activity.write_quiet, activity.write_unmirrored
+    );
+
+    let nominees: Logins = tac::read_json(&paths.logins).ok_or_else(|| {
+        anyhow::anyhow!(
+            "no {}; run the logins phase first -- only a maintainer who could \
+             also stand may vote",
+            paths.logins.display()
+        )
+    })?;
+
+    let (mut voters, _) = tac_voters::compute(&mirror, &exports, staff);
+    voters.repositories = repositories;
+    let nominated: BTreeSet<String> = nominees.logins.keys().cloned().collect();
+    let combinations = tac_voters::restrict_to_nominees(&mut voters, &nominated);
     tac::write_json(&paths.voters, &voters)?;
     if !voters.orgs_without_people.is_empty() {
         // Not fatal: an org can be in the configs and outside both
@@ -488,14 +590,69 @@ fn voters(args: &Args, paths: &Paths) -> Result<()> {
         );
     }
     println!(
-        "{} maintainers ({} bots dropped) -> {}",
-        voters.voters.len(),
+        "{} maintainers ({} bots dropped{})",
+        voters.voters.len() + voters.cannot_run_dropped.len(),
         voters.bots_dropped.len(),
-        paths.voters.display()
+        dropped_note(&voters.staff_dropped)
+    );
+    println!(
+        "{} voters -> {}, after dropping the {} who could not stand in the \
+         {} to {} window",
+        voters.voters.len(),
+        paths.voters.display(),
+        voters.cannot_run_dropped.len(),
+        nominees.window.since,
+        nominees.window.until
     );
     for (combination, count) in combinations {
         println!("  {count:>5}  {combination}");
     }
+    Ok(())
+}
+
+// ------------------------------------------------------------------ seed-staff
+
+/// Write the first cut of the staff file: everyone a config or GitHub puts on a
+/// team whose name ends in staff, bot or bots. Reads the same two inputs the
+/// voters phase does, and stops afterwards -- the file is meant to be edited
+/// before anything counts it.
+fn seed_staff(args: &Args) -> Result<()> {
+    let target = args
+        .staff
+        .clone()
+        .unwrap_or_else(|| PathBuf::from(tac_staff::SEED_NAME));
+    if target.exists() {
+        bail!(
+            "{} is already there; edit it, or name another file with --staff",
+            target.display()
+        );
+    }
+    if !args.clowarden.is_dir() {
+        bail!(
+            "no CLOWarden mirror at {}; run ./mirror-clowarden.zsh",
+            args.clowarden.display()
+        );
+    }
+    let mirror = clowarden::read(&args.clowarden, |warning| eprintln!("{warning}"))?;
+    let exports = read_exports(&args.people)?;
+
+    let found = tac_staff::seed(&mirror, &exports);
+    std::fs::write(&target, tac_staff::render_seed(&found, &tac::today()))
+        .with_context(|| format!("writing {}", target.display()))?;
+    println!(
+        "{} logins on a {} team -> {}",
+        found.len(),
+        tac_staff::SEED_TEAM_SUFFIXES
+            .iter()
+            .map(|suffix| format!("*{suffix}"))
+            .collect::<Vec<_>>()
+            .join(" / "),
+        target.display()
+    );
+    println!(
+        "Nothing counts it yet: read it, delete the line for anyone who should \
+         keep their vote, then run the logins and voters phases again."
+    );
     Ok(())
 }
 
@@ -552,13 +709,30 @@ fn write(args: &Args, paths: &Paths) -> Result<()> {
         .cloned()
         .collect();
     println!("  in both lists: {}", both.len());
+
+    // The same roll Helios needs, in the shape its bulk upload reads: the
+    // hashes prove eligibility on the public page, this lets the election be
+    // loaded without typing 500 logins in by hand.
+    std::fs::write(
+        &paths.csv,
+        tac_helios::render(voters.voters.values().map(|voter| voter.login.as_str())),
+    )
+    .with_context(|| format!("writing {}", paths.csv.display()))?;
+    println!(
+        "wrote {} -- {} voters as `{},<login>`, no header, for the Helios bulk \
+         voter upload",
+        paths.csv.display(),
+        voters.voters.len(),
+        tac_helios::VOTER_TYPE
+    );
     println!(
         "\nWindow {} to {}. Nothing was committed; the logins behind the hashes \
-         are in {} and {}, which are gitignored.",
+         are in {}, {} and {}, which are gitignored.",
         nominees.window.since,
         nominees.window.until,
         file_name(&paths.voters),
-        file_name(&paths.logins)
+        file_name(&paths.logins),
+        file_name(&paths.csv)
     );
     Ok(())
 }

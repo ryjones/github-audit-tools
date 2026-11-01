@@ -122,6 +122,17 @@ if [[ -n $OUTFILE && $OUTFILE != - ]]; then
   [[ -w $outdir ]] || { print -u2 "error: directory not writable: $outdir"; exit 1 }
 fi
 
+# Which credential each request uses: one organization in the enterprise
+# forbids classic personal access tokens, so its calls go out with a token of
+# its own. See github-lib.zsh.
+GH_LIB_FILE=${0:A:h}/github-lib.zsh
+if [[ -r $GH_LIB_FILE ]]; then
+  source $GH_LIB_FILE
+else
+  gh_api() { gh api "$@" }
+  gh_declared_orgs_to_add() { : }
+fi
+
 command -v gh >/dev/null || { print -u2 "error: gh not found"; exit 127 }
 command -v jq >/dev/null || { print -u2 "error: jq not found"; exit 127 }
 gh auth status >/dev/null 2>&1 || { print -u2 "error: gh is not authenticated (run: gh auth login)"; exit 1 }
@@ -150,7 +161,10 @@ if (( ${#ORGS} == 0 )); then
   ent_name=$(print -r -- "$gql_out" | jq -r '[.[].data.enterprise.name]|map(select(.))|first // empty')
   [[ -n $ent_name ]] || { print -u2 "error: enterprise '$ENTERPRISE' not found or not visible to this token"; exit 1 }
 
-  ORGS=(${(f)"$(print -r -- "$gql_out" | jq -r '[.[].data.enterprise.organizations.nodes[].login]|unique|.[]')"})
+  ORGS=(${(f)"$(print -r -- "$gql_out" | jq -r '[.[].data.enterprise.organizations.nodes[].login]|unique|.[]|select(. != null)')"})
+  # An organization that forbids classic tokens comes back as a null in that
+  # listing, with no login in it; org-tokens.txt is where it is named.
+  ORGS+=($(gh_declared_orgs_to_add $ORGS))
   print -u2 "→ $ent_name: ${#ORGS} org(s): ${ORGS[*]}"
 fi
 
@@ -171,7 +185,7 @@ for org in $ORGS_FOR_ADVISORIES; do
 
   # A 403/404 here just means this token isn't an owner/security manager of $org.
   # Warn and keep going so one inaccessible org doesn't sink the whole sweep.
-  if ! raw=$(gh api --paginate --slurp "$api_path" 2>&1); then
+  if ! raw=$(gh_api "$api_path" --paginate --slurp 2>&1); then
     # gh appends its own "gh: ..." line to the body, so $raw isn't valid JSON — scrape it.
     typeset why
     why=$(print -r -- "$raw" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p' | head -1)
@@ -232,7 +246,7 @@ if (( REPO_POSTURE )); then
   # 1. enumerate repos across the orgs
   repo_list=""
   for org in $ORGS; do
-    if ! raw=$(gh api --paginate --slurp "/orgs/$org/repos?per_page=100&type=all" 2>&1); then
+    if ! raw=$(gh_api "/orgs/$org/repos?per_page=100&type=all" --paginate --slurp 2>&1); then
       why=$(print -r -- "$raw" | sed -n 's/.*"message":"\([^"]*\)".*/\1/p' | head -1)
       print -u2 "! skipping repos of $org: ${why:-unreadable}"
       failed=1
@@ -264,7 +278,7 @@ if (( REPO_POSTURE )); then
         # PVR is a public-repo feature; the endpoint 404s on private repos even
         # for admins, so don't spend a call and don't call it "unknown".
         enabled="n/a"
-      elif pvr_raw=$(gh api "/repos/$full/private-vulnerability-reporting" 2>/dev/null); then
+      elif pvr_raw=$(gh_api "/repos/$full/private-vulnerability-reporting" 2>/dev/null); then
         enabled=$(print -r -- "$pvr_raw" | jq -r 'if .enabled == true then "enabled" elif .enabled == false then "disabled" else "unknown" end')
       else
         enabled="unknown"   # usually: not a repo admin
@@ -280,7 +294,16 @@ if (( REPO_POSTURE )); then
   done <<< "$repo_list"
   wait || true
 
-  repos_json=$(cat "$tmpd"/*.json 2>/dev/null | jq -s -c 'sort_by(.org, .name)' || print -n '[]')
+  # (N), because with nothing to probe -- every repository of the only
+  # organization asked for unreadable, say -- the glob would otherwise abort
+  # the script, and an empty read has to come out as [] rather than as
+  # nothing, which the jq below would reject.
+  typeset -a pvr_parts=("$tmpd"/*.json(N))
+  if (( ${#pvr_parts} )); then
+    repos_json=$(cat $pvr_parts | jq -s -c 'sort_by(.org, .name)') || repos_json='[]'
+  else
+    repos_json='[]'
+  fi
 
   # Fold in advisory counts so a PVR-disabled repo that still has advisories
   # stands out, and drop GitHub's per-advisory private forks — they are an

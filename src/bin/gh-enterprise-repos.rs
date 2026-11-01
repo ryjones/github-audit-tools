@@ -10,6 +10,7 @@ use futures::stream::{self, StreamExt};
 
 use collect::{Archived, Collector, Filter, Forks, OrgSnapshot, Visibility};
 use github_audit_tools::client::GithubClient;
+use github_audit_tools::token;
 use model::*;
 
 /// Export the repositories of every organization in a GitHub enterprise — or
@@ -271,10 +272,12 @@ async fn enterprise_snapshots(
     slug: &str,
 ) -> Result<(Vec<OrgSnapshot>, Vec<String>)> {
     eprintln!("Listing organizations in enterprise `{slug}` …");
-    let mut orgs = collector.enterprise_orgs(slug).await?;
+    let listed = collector.enterprise_orgs(slug).await?;
+    let mut orgs = listed.logins;
     orgs.sort_by_key(|o| o.to_lowercase());
     orgs.dedup_by_key(|o| o.to_lowercase());
     eprintln!("  found {} organization(s)", orgs.len());
+    token::add_declared(&mut orgs, listed.unreadable);
     if orgs.is_empty() {
         bail!("enterprise `{slug}` has no organizations visible to this token");
     }
@@ -483,7 +486,7 @@ fn text(value: Option<String>) -> Option<String> {
 /// a time, and an enterprise listing made with a token that cannot see an
 /// organization leaves it out without saying so.
 fn resolve_token(hostname: Option<&str>) -> Result<(String, String)> {
-    for name in ["GITHUB_TOKEN", "GH_TOKEN"] {
+    for name in token::DEFAULT_VARS.iter().copied() {
         match std::env::var(name) {
             Ok(value) if !value.trim().is_empty() => {
                 return Ok((value.trim().to_string(), name.to_string()));

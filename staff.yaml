@@ -1,0 +1,45 @@
+# Logins kept off both TAC election rolls, with why. Edit by hand:
+# delete the line for anyone who should keep their vote.
+#
+# First cut written 2026-10-10 by `tac-eligibility --seed-staff`:
+# everyone a CLOWarden config or GitHub puts on a team whose name ends
+# in staff, bot or bots. Some of them are people who look after a bot
+# rather than automation, so read it before it counts.
+#
+# Logins whose reason is an ent: team came from the enterprise teams at
+# https://github.com/enterprises/<enterprise>/teams, which are the
+# foundation's own answer to who is staff and who is automation. No
+# CLOWarden config names them, so --seed-staff cannot find them.
+#
+# Nothing regenerates this file. It is yours now.
+
+staff:
+  - christinaharter
+  - daniela-barbosa
+  - davidwboswell
+  - Emily-Fisher-PR
+  - estherrgarcia
+  - hartm
+  - jwagantall
+  - minyu66
+  - nsouthernlf
+  - ryjones
+  - SeanBohan
+  - tbenzies
+  - Tomaz-S-LFDT
+  - tykeal
+bots:
+  - hedera-github-bot
+  - git-repo-creation-app
+  - hedera-local-node-bot
+  - hyperledger-bot
+  - hyperledger-ci
+  - LF-Europe
+  - lfdt-bot
+  - owf-bot
+  - CNCF-Bot2
+  - sorabot
+  - coveralls
+  - thelinuxfoundation
+  - thunder-automation-bot
+  - wso2-digital-statistics-bot

@@ -14,14 +14,25 @@
 # Steps: repos, people, clones, mirror, nominees, voters.
 #
 # Every step is re-runnable. The exports overwrite, the clones fetch rather than
-# re-clone, and each tac-eligibility phase writes its own file under repos/, so
-# an interrupted run resumes from --from. The expensive step is `nominees`: it
-# asks GitHub who each commit address belongs to, and only repos/cache.json
-# keeps a second run from paying for it again.
+# re-clone, and each tac-eligibility phase writes its own file into the mirror
+# tree, so an interrupted run resumes from --from. The expensive step is
+# `nominees`: it asks GitHub who each commit address belongs to, and only the
+# `cache.json` in there keeps a second run from paying for it again.
+#
+# The mirrors are the cache clone-repos.zsh keeps -- /Volumes/graid/github-mirror
+# when that array is mounted -- so the election reuses the clones the Forgejo
+# mirroring already fetched instead of making a second copy. REPOS overrides it.
+#
+# Both rolls drop whoever staff.yaml at the root names -- foundation staff,
+# bots the code does not recognize. That file is tracked, and
+# `tac-eligibility --seed-staff` writes its first cut; see
+# docs/tac-eligibility.md.
 #
 # Nothing here commits anything. The last step writes exactly one file inside
 # the tac-eligibility-check checkout -- hashes.js, no git commands -- so
-# reviewing and committing it is a hand step.
+# reviewing and committing it is a hand step. The voter roll Helios uploads
+# lands beside the phase files as voters.csv, which is gitignored: it holds the
+# logins the published hashes hide.
 
 setopt err_exit no_unset pipe_fail
 zmodload zsh/datetime
@@ -35,7 +46,11 @@ BIN=${BIN:-target/release}
 
 RESULTS=results            # gh-enterprise-repos exports
 PEEPS=peeps                # gh-org-members exports
-REPOS=repos                # the bare mirrors, and the phase files
+# The bare mirrors are the cache clone-repos.zsh keeps, which owns the decision
+# about where that is; ask it rather than keep a second copy of the answer. The
+# phase files tac-eligibility writes land in there beside the clones. REPOS
+# overrides, for a run against a tree of your own.
+REPOS=${REPOS:-$(./clone-repos.zsh --print-root 2> /dev/null || print -r -- repos)}
 MIRROR=mirror              # the CLOWarden config checkouts
 WATCHED=reports/clowarden-watched-repos.csv
 OUT=tac-eligibility-check/hashes.js
@@ -136,6 +151,12 @@ if (( want[voters] )) && ! (( want[people] )); then
       || missing "no $people; run the people step, or edit PEOPLE in this script"
   done
 fi
+# Only a maintainer who could also stand may vote, so the roll needs the
+# nominee sweep's answer.
+if (( want[voters] )) && ! (( want[nominees] )); then
+  [[ -r $REPOS/logins.json ]] \
+    || missing "no $REPOS/logins.json; run the nominees step first"
+fi
 
 # --- the steps ---------------------------------------------------------------
 
@@ -213,10 +234,10 @@ step_nominees() {
     --repos $REPOS --phase authors --phase logins
 }
 
-# Voters: who the CLOWarden configs and the export make a maintainer or owner --
-# then both lists into hashes.js.
+# Voters: who the CLOWarden configs and the export make a maintainer or owner,
+# narrowed to those the nominee sweep found -- then both lists into hashes.js.
 step_voters() {
-  banner "voters: maintainers and owners, then $OUT"
+  banner "voters: maintainers and owners who could also stand, then $OUT"
   run $BIN/tac-eligibility ${(f)"$(repeated --report $REPORTS)"} --since $SINCE \
     --repos $REPOS --phase voters --phase write \
     ${(f)"$(repeated --people $PEOPLE)"} --clowarden $MIRROR --out $OUT
@@ -251,5 +272,6 @@ print -r -- "Pipeline done in $(printf '%.0fs' $(( EPOCHREALTIME - started )))."
 if (( want[voters] )); then
   print -r -- "$OUT is written and nothing was committed: review it in ${OUT:h}/ and"
   print -r -- "commit it there yourself. The logins behind the hashes stay in $REPOS/, which"
-  print -r -- "is gitignored -- the published file holds only digests."
+  print -r -- "is gitignored -- the published file holds only digests. The Helios bulk voter"
+  print -r -- "upload is $REPOS/voters.csv, one github,<login> line per voter."
 fi

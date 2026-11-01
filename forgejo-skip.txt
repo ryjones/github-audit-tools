@@ -1,0 +1,16 @@
+# Repositories on the Forgejo instance that something else writes, which
+# clone-repos.zsh --forgejo and update-repos.zsh must therefore never push
+# into. One ORG/NAME per line, case-insensitive; # starts a comment.
+#
+# The clone under repos/ is still fetched from github.com -- it is only the
+# push to Forgejo that is skipped, because the copy on the instance is not a
+# copy of GitHub but the authoritative one.
+#
+# LFDT-way/discord-stats and LFDT-way/discord-stats-private are rendered and
+# pushed daily by publish-lfdt-way on the nulogger container. A push from the
+# GitHub mirror forces their branch back to whatever github.com has and prunes
+# everything else, which is how the 2026-10-21 run threw away that day's
+# reports.
+LFDT-way/discord-stats
+LFDT-way/wiki-x
+LFDT-way/discord-stats-private

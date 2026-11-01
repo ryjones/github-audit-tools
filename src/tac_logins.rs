@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::tac::{self, Window, is_bot};
 use crate::tac_authors::Author;
+use crate::tac_staff::Staff;
 
 /// One cached answer about one address.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,6 +136,10 @@ pub struct Logins {
     /// Keyed by lowercased login.
     pub logins: BTreeMap<String, Account>,
     pub bots_dropped: Vec<String>,
+    /// Logins the hand-written staff file kept off the roll, each with the
+    /// reason that file gave.
+    #[serde(default)]
+    pub staff_dropped: Vec<String>,
     /// Busiest first: the ones worth mapping by hand are at the top.
     pub unresolved: Vec<Unresolved>,
 }
@@ -201,7 +206,8 @@ pub fn accounts(
     emails: &BTreeMap<String, Author>,
     cache: &Cache,
     aliases: &BTreeMap<String, String>,
-) -> (BTreeMap<String, Account>, Vec<String>, Vec<Unresolved>) {
+    staff: &Staff,
+) -> Accounts {
     let mut logins: BTreeMap<String, Account> = BTreeMap::new();
     let mut unresolved = Vec::new();
 
@@ -246,13 +252,31 @@ pub fn accounts(
         logins.remove(bot);
     }
 
+    // Then whoever the staff file names, after the bots, so a login in both is
+    // reported once as a bot.
+    let staff_dropped = staff.dropped(logins.values().map(|account| account.login.as_str()));
+    logins.retain(|login, _| !staff.excludes(login));
+
     // Busiest first, then by address so a run is reproducible.
     unresolved.sort_by(|a, b| {
         b.commits
             .cmp(&a.commits)
             .then_with(|| a.email.cmp(&b.email))
     });
-    (logins, bots, unresolved)
+    Accounts {
+        logins,
+        bots_dropped: bots,
+        staff_dropped,
+        unresolved,
+    }
+}
+
+/// What `accounts` worked out: the roll, and what it left off.
+pub struct Accounts {
+    pub logins: BTreeMap<String, Account>,
+    pub bots_dropped: Vec<String>,
+    pub staff_dropped: Vec<String>,
+    pub unresolved: Vec<Unresolved>,
 }
 
 #[cfg(test)]
@@ -343,7 +367,9 @@ mod tests {
             ("work@x.com", Some("RyJones")),
             ("home@x.com", Some("ryjones")),
         ]);
-        let (logins, _, unresolved) = accounts(&emails, &cache, &BTreeMap::new());
+        let Accounts {
+            logins, unresolved, ..
+        } = accounts(&emails, &cache, &BTreeMap::new(), &Staff::default());
 
         assert_eq!(logins.len(), 1);
         let account = &logins["ryjones"];
@@ -368,7 +394,9 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let (logins, _, unresolved) = accounts(&emails, &cache, &aliases);
+        let Accounts {
+            logins, unresolved, ..
+        } = accounts(&emails, &cache, &aliases, &Staff::default());
         assert_eq!(logins["ryjones"].commits, 9);
         assert_eq!(logins["right"].commits, 1, "the alias overrides the cache");
         assert!(unresolved.is_empty());
@@ -386,7 +414,9 @@ mod tests {
         .into_iter()
         .collect();
         let cache = cache_with(&[]);
-        let (logins, _, unresolved) = accounts(&emails, &cache, &BTreeMap::new());
+        let Accounts {
+            logins, unresolved, ..
+        } = accounts(&emails, &cache, &BTreeMap::new(), &Staff::default());
         assert!(logins.is_empty());
         assert_eq!(unresolved[0].email, "busy@x.com");
         assert_eq!(unresolved[0].repos.len(), 5, "enough to recognize, not all");
@@ -405,8 +435,36 @@ mod tests {
             ("bot@x.com", Some("dependabot[bot]")),
             ("ry@x.com", Some("ryjones")),
         ]);
-        let (logins, bots, _) = accounts(&emails, &cache, &BTreeMap::new());
+        let Accounts {
+            logins,
+            bots_dropped: bots,
+            ..
+        } = accounts(&emails, &cache, &BTreeMap::new(), &Staff::default());
         assert_eq!(bots, ["dependabot[bot]"]);
         assert_eq!(logins.keys().collect::<Vec<_>>(), ["ryjones"]);
+    }
+
+    #[test]
+    fn the_staff_file_keeps_an_author_off_the_nominee_roll() {
+        let dir = std::env::temp_dir().join(format!("tac-logins-staff-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("staff.yml"), "- A-Staffer\n").expect("write");
+        let staff = Staff::open(&dir).expect("opens");
+        std::fs::remove_dir_all(&dir).ok();
+
+        let emails: BTreeMap<String, Author> = [
+            ("staffer@x.com".to_string(), author(9, &["org/repo"])),
+            ("dev@x.com".to_string(), author(3, &["org/repo"])),
+        ]
+        .into_iter()
+        .collect();
+        let cache = cache_with(&[
+            ("staffer@x.com", Some("a-staffer")),
+            ("dev@x.com", Some("a-dev")),
+        ]);
+
+        let found = accounts(&emails, &cache, &BTreeMap::new(), &staff);
+        assert_eq!(found.logins.keys().collect::<Vec<_>>(), ["a-dev"]);
+        assert_eq!(found.staff_dropped, ["a-staffer"]);
     }
 }

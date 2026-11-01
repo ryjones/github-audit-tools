@@ -14,6 +14,11 @@
 //! - `owner` -- an organization owner, who can reach every repository in it
 //!   whatever the teams say.
 //!
+//! The roll is then cut to the people who could also stand: a maintainer whom
+//! the nominee roll does not name -- nobody resolved a commit of theirs in the
+//! window -- neither runs nor votes. `restrict_to_nominees` does that, and
+//! records whom it dropped.
+//!
 //! No network: both sides are files on disk.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,6 +28,8 @@ use serde::{Deserialize, Serialize};
 use crate::clowarden::{Mirror, team_slug};
 use crate::members_model::Report;
 use crate::tac::is_bot;
+use crate::tac_activity::RepoAccess;
+use crate::tac_staff::Staff;
 
 /// One voter, and why.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,7 +71,20 @@ pub struct Voters {
     pub orgs_without_people: Vec<String>,
     /// How many teams hold write or better somewhere.
     pub write_teams: usize,
+    /// Every repository the configs declare access on, as `org/repo` -> what
+    /// was declared and the latest activity in its mirror. `compute` leaves it
+    /// empty; the phase fills it, because it is the mirrors that answer it.
+    #[serde(default)]
+    pub repositories: BTreeMap<String, RepoAccess>,
     pub bots_dropped: Vec<String>,
+    /// Logins the hand-written staff file kept off the roll, each with the
+    /// reason that file gave.
+    #[serde(default)]
+    pub staff_dropped: Vec<String>,
+    /// Maintainers who could not stand for election, so they do not vote
+    /// either: the nominee roll does not name them.
+    #[serde(default)]
+    pub cannot_run_dropped: Vec<String>,
     /// Keyed by lowercased login, which is how GitHub compares them.
     pub voters: BTreeMap<String, Voter>,
 }
@@ -74,7 +94,11 @@ pub struct Voters {
 /// Each export is `(path, report)`; the path is only recorded. Two exports
 /// union: `note` keys people by lowercased login, so someone in both appears
 /// once with every source and place that named them.
-pub fn compute(mirror: &Mirror, exports: &[(String, Report)]) -> (Voters, Vec<(String, usize)>) {
+pub fn compute(
+    mirror: &Mirror,
+    exports: &[(String, Report)],
+    staff: &Staff,
+) -> (Voters, Vec<(String, usize)>) {
     let write_teams = mirror.write_teams();
     let mut voters: BTreeMap<String, Voter> = BTreeMap::new();
 
@@ -138,16 +162,16 @@ pub fn compute(mirror: &Mirror, exports: &[(String, Report)]) -> (Voters, Vec<(S
         voters.remove(bot);
     }
 
-    // How many people each combination of sources accounts for -- the quickest
-    // read on whether the config and GitHub are telling the same story.
-    let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
+    // Then whoever the staff file names. Done after the bots so a login in both
+    // is reported once, as a bot.
+    let staff_dropped = staff.dropped(voters.values().map(|voter| voter.login.as_str()));
+    voters.retain(|login, _| !staff.excludes(login));
+
     for voter in voters.values_mut() {
         voter.sources.sort();
         voter.where_.sort();
-        *by_source.entry(voter.sources.join("+")).or_default() += 1;
     }
-    let mut combinations: Vec<(String, usize)> = by_source.into_iter().collect();
-    combinations.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let combinations = by_source(&voters);
 
     let orgs_without_config: BTreeSet<String> = mirror.skipped.iter().cloned().collect();
 
@@ -175,11 +199,50 @@ pub fn compute(mirror: &Mirror, exports: &[(String, Report)]) -> (Voters, Vec<(S
             people_exports: exports.iter().map(|(path, _)| path.clone()).collect(),
             orgs_without_people: orgs_without_people.into_iter().collect(),
             write_teams: write_teams.len(),
+            repositories: BTreeMap::new(),
             bots_dropped: bots,
+            staff_dropped,
+            cannot_run_dropped: Vec::new(),
             voters,
         },
         combinations,
     )
+}
+
+/// How many people each combination of sources accounts for -- the quickest
+/// read on whether the config and GitHub are telling the same story.
+fn by_source(voters: &BTreeMap<String, Voter>) -> Vec<(String, usize)> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for voter in voters.values() {
+        *counts.entry(voter.sources.join("+")).or_default() += 1;
+    }
+    let mut combinations: Vec<(String, usize)> = counts.into_iter().collect();
+    combinations.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    combinations
+}
+
+/// Cut the roll down to the maintainers who could also stand.
+///
+/// A vote and a nomination then rest on the same window: holding write
+/// somewhere is not enough on its own, so a maintainer the nominee roll does
+/// not name loses the vote too. They are recorded in `cannot_run_dropped`
+/// rather than silently removed.
+///
+/// `nominees` is keyed by lowercased login, the way `voters` is, because that
+/// is how GitHub compares them. Returns the source combinations again, counted
+/// over what is left.
+pub fn restrict_to_nominees(
+    voters: &mut Voters,
+    nominees: &BTreeSet<String>,
+) -> Vec<(String, usize)> {
+    voters.cannot_run_dropped = voters
+        .voters
+        .iter()
+        .filter(|(login, _)| !nominees.contains(*login))
+        .map(|(_, voter)| voter.login.clone())
+        .collect();
+    voters.voters.retain(|login, _| nominees.contains(login));
+    by_source(&voters.voters)
 }
 
 #[cfg(test)]
@@ -236,7 +299,7 @@ mod tests {
 
     #[test]
     fn a_config_roster_on_a_write_team_votes_and_a_read_team_does_not() {
-        let (voters, _) = compute(&mirror(), &export(serde_json::json!([])));
+        let (voters, _) = compute(&mirror(), &export(serde_json::json!([])), &Staff::default());
         let logins: Vec<&String> = voters.voters.keys().collect();
         assert_eq!(logins, ["alice", "bob"], "carol only has read");
         assert_eq!(voters.voters["alice"].sources, ["config"]);
@@ -262,6 +325,7 @@ mod tests {
                     {"org": "acme", "role": "MEMBER",
                      "teams": [{"slug": "readers", "role": "MEMBER"}]}]},
             ])),
+            &Staff::default(),
         );
         assert_eq!(voters.voters["alice"].sources, ["config", "live"]);
         assert_eq!(voters.voters["dave"].sources, ["live"], "not in the config");
@@ -284,7 +348,7 @@ mod tests {
     fn a_bot_on_a_write_team_is_dropped_and_said_so() {
         let mut mirror = mirror();
         mirror.configs[0].teams[0].members.push("lfdt-bot".into());
-        let (voters, _) = compute(&mirror, &export(serde_json::json!([])));
+        let (voters, _) = compute(&mirror, &export(serde_json::json!([])), &Staff::default());
         assert_eq!(voters.bots_dropped, ["lfdt-bot"]);
         assert!(!voters.voters.contains_key("lfdt-bot"));
     }
@@ -293,7 +357,7 @@ mod tests {
     fn one_person_keeps_the_spelling_the_source_used() {
         let mut mirror = mirror();
         mirror.configs[0].teams[0].maintainers = vec!["RyJones".into()];
-        let (voters, _) = compute(&mirror, &export(serde_json::json!([])));
+        let (voters, _) = compute(&mirror, &export(serde_json::json!([])), &Staff::default());
         assert_eq!(voters.voters["ryjones"].login, "RyJones");
     }
 
@@ -349,6 +413,7 @@ mod tests {
                     ),
                 ),
             ],
+            &Staff::default(),
         );
 
         assert_eq!(
@@ -373,6 +438,23 @@ mod tests {
     }
 
     #[test]
+    fn the_staff_file_keeps_a_maintainer_off_the_roll_and_says_why() {
+        let dir = std::env::temp_dir().join(format!("tac-voters-staff-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        std::fs::write(dir.join("staff.yaml"), "Alice: foundation staff\n").expect("write");
+        let staff = Staff::open(&dir).expect("opens");
+        std::fs::remove_dir_all(&dir).ok();
+
+        let (voters, _) = compute(&mirror(), &export(serde_json::json!([])), &staff);
+        assert!(
+            !voters.voters.contains_key("alice"),
+            "the config named alice, the staff file overrules it"
+        );
+        assert!(voters.voters.contains_key("bob"), "bob is untouched");
+        assert_eq!(voters.staff_dropped, ["alice (foundation staff)"]);
+    }
+
+    #[test]
     fn an_organization_with_a_config_and_no_export_is_named() {
         let (voters, _) = compute(
             &mirror(),
@@ -380,11 +462,62 @@ mod tests {
                 "peeps/beta.yaml".to_string(),
                 report(&["beta"], serde_json::json!([])),
             )],
+            &Staff::default(),
         );
         assert_eq!(
             voters.orgs_without_people,
             ["acme"],
             "acme has a config but no export covers it"
         );
+    }
+    /// Who may vote and who may stand now rest on the same window.
+    #[test]
+    fn a_maintainer_the_nominee_roll_does_not_name_loses_the_vote() {
+        let (mut voters, _) = compute(&mirror(), &export(serde_json::json!([])), &Staff::default());
+        assert_eq!(voters.voters.keys().collect::<Vec<_>>(), ["alice", "bob"]);
+
+        let nominees: BTreeSet<String> = ["alice".to_string(), "dave".to_string()]
+            .into_iter()
+            .collect();
+        let combinations = restrict_to_nominees(&mut voters, &nominees);
+
+        assert_eq!(voters.voters.keys().collect::<Vec<_>>(), ["alice"]);
+        assert_eq!(
+            voters.cannot_run_dropped,
+            ["bob"],
+            "dropped, and said so rather than silently"
+        );
+        assert_eq!(
+            combinations,
+            [("config".to_string(), 1)],
+            "the counts describe what is left"
+        );
+    }
+
+    /// The nominee roll is keyed by lowercased login; a config may shout.
+    #[test]
+    fn the_rolls_are_matched_the_way_github_compares_logins() {
+        let (mut voters, _) = compute(
+            &mirror(),
+            &export(serde_json::json!([{
+                "login": "Carol",
+                "organizations": [{
+                    "org": "acme",
+                    "role": "ADMIN",
+                    "teams": [],
+                }],
+            }])),
+            &Staff::default(),
+        );
+        let nominees: BTreeSet<String> = ["alice", "bob", "carol"]
+            .iter()
+            .map(|login| login.to_string())
+            .collect();
+        restrict_to_nominees(&mut voters, &nominees);
+        assert!(
+            voters.voters.contains_key("carol"),
+            "the export spelled her Carol; the nominee roll spells her carol"
+        );
+        assert!(voters.cannot_run_dropped.is_empty());
     }
 }

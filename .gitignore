@@ -19,7 +19,16 @@
 !/README.md
 !/docs/*.md
 
+# The one hand-written input that IS tracked: who is kept off the election
+# rolls, and why. Public logins and a reason each -- and who was excluded is
+# part of the record of an election, so it belongs in git.
+!/staff.json
+!/staff.yaml
+!/staff.yml
+
 # The LFDT eligibility page: a checkout of its own repository, left alone.
 /tac-eligibility-check/
+
+.forgejo/**
 
 .DS_Store

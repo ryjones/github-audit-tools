@@ -189,8 +189,13 @@ pub async fn resolve_targets(
         (_, Some(o)) => vec![o.to_string()],
         (Some(slug), None) => {
             eprintln!("Enumerating organizations in enterprise {slug:?}...");
-            let orgs = enterprise_orgs(client, slug).await?;
+            let mut orgs = enterprise_orgs(client, slug).await?;
             eprintln!("  {} organization(s)", orgs.len());
+            // An organization that forbids classic tokens is absent from the
+            // listing with nothing to say so; org-tokens.txt names it. The
+            // null count is not available here, so nothing is reported about
+            // organizations the file does not account for.
+            crate::token::add_declared(&mut orgs, 0);
             orgs
         }
         (None, None) => unreachable!("scope is validated by the CLI parser"),

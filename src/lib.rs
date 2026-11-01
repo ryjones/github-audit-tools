@@ -14,17 +14,24 @@
 //! - `storage_*` — Actions artifact storage (`gh-actions-storage`).
 //! - `clowarden*`, `tac_*` — the CLOWarden configs, and the TAC election
 //!   eligibility phases that read them.
+//! - `token` — which credential a request uses, for the one organization
+//!   that refuses classic personal access tokens.
 
 pub mod client;
 pub mod rest_client;
+pub mod token;
 
 pub mod clowarden;
 pub mod clowarden_drift;
 
 pub mod tac;
+pub mod tac_activity;
 pub mod tac_authors;
 pub mod tac_hashes;
+pub mod tac_helios;
 pub mod tac_logins;
+pub mod tac_rolldiff;
+pub mod tac_staff;
 pub mod tac_voters;
 
 pub mod repos_collect;

@@ -16,6 +16,7 @@ use github_audit_tools::members_collect::{
 use github_audit_tools::members_logins::{self as logins, CaseCheck, InputFormat, Resolution};
 use github_audit_tools::members_model::*;
 use github_audit_tools::members_yaml as yaml;
+use github_audit_tools::token;
 
 /// Export the people in a GitHub enterprise or organization, and the teams they
 /// belong to, as YAML.
@@ -226,8 +227,10 @@ async fn run() -> Result<ExitCode> {
     let mut enterprise = EnterpriseInput::default();
     if let Some(slug) = &args.enterprise {
         eprintln!("Listing organizations in enterprise `{slug}` …");
-        orgs.extend(collector.enterprise_orgs(slug).await?);
+        let listed = collector.enterprise_orgs(slug).await?;
+        orgs.extend(listed.logins);
         eprintln!("  found {} organization(s)", orgs.len());
+        token::add_declared(&mut orgs, listed.unreadable);
 
         eprintln!("Listing people in enterprise `{slug}` …");
         match collector.enterprise_members(slug).await {
@@ -505,7 +508,7 @@ fn write_audit_logins(args: &Args, path: &Path) -> Result<ExitCode> {
 /// a time, and an export made with a token that cannot see an organization
 /// omits that organization silently.
 fn resolve_token(hostname: Option<&str>) -> Result<(String, String)> {
-    for name in ["GITHUB_TOKEN", "GH_TOKEN"] {
+    for name in token::DEFAULT_VARS.iter().copied() {
         match std::env::var(name) {
             Ok(value) if !value.trim().is_empty() => {
                 return Ok((value.trim().to_string(), name.to_string()));

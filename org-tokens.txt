@@ -1,0 +1,28 @@
+# Organizations that need a credential of their own, one per line.
+#
+# An organization can turn classic personal access tokens off. Everything
+# about it then answers 403 -- not a thinner result, nothing at all:
+#
+#   `LFDT-Lineth` forbids access via a personal access token (classic).
+#   Please use a GitHub App, OAuth App, or a personal access token with
+#   fine-grained permissions.
+#
+# It has to be named here because an enterprise listing will not name it. The
+# GraphQL query returns a null where the organization should be, and a message
+# saying why, but never its login -- so without this file the organization is
+# simply missing from the export and nothing says which one it was.
+#
+# The token comes from the environment: GITHUB_<LOGIN>_TOKEN, the login
+# uppercased with anything that is not a letter or a digit turned into an
+# underscore -- so LFDT-Lineth is read with GITHUB_LFDT_LINETH_TOKEN. That is
+# the only name derived, because it is looked for on every organization a run
+# touches: a second guess, such as the login's last segment, would have
+# GITHUB_LABS_TOKEN quietly claim every organization whose name ends in -labs.
+# For a token kept under another name, write `LOGIN = VARIABLE` here. A run
+# says which variable it used, and says so too when a declared organization
+# has no token set.
+#
+# This file is tracked: which organizations are like this is a fact about them,
+# not about the machine. The tokens themselves are never in here.
+
+LFDT-Lineth

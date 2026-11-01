@@ -27,6 +27,17 @@ setopt err_exit no_unset pipe_fail
 
 SELF=${0:A}
 
+# Which credential each request uses: one organization in the enterprise
+# forbids classic personal access tokens, so its calls go out with a token of
+# its own. See github-lib.zsh.
+GH_LIB_FILE=${0:A:h}/github-lib.zsh
+if [[ -r $GH_LIB_FILE ]]; then
+  source $GH_LIB_FILE
+else
+  gh_api() { gh api "$@" }
+  gh_declared_orgs_to_add() { : }
+fi
+
 # Where a config is kept, in the order worth trying.
 CANDIDATE_REPOS=(governance tsc clowarden .clowarden .github)
 # The file names CLOWarden answers to; the parser in clowarden.rs knows the
@@ -43,7 +54,7 @@ die() {
 probe_one() {
   local slug=$1
   local -a found
-  found=(${(f)"$(gh api "/repos/$slug/contents" --jq '.[].name' 2>/dev/null || :)"})
+  found=(${(f)"$(gh_api "/repos/$slug/contents" --jq '.[].name' 2>/dev/null || :)"})
   local name
   for name in $CONFIG_NAMES; do
     if (( ${found[(Ie)$name]} )); then
@@ -52,6 +63,28 @@ probe_one() {
     fi
   done
   return 0
+}
+
+# Which organizations in ORGS (one per line) no line of FOUND names in its
+# first column, compared the way `sort -uf` sorted them: without regard to
+# case.
+#
+# `comm -23` is the obvious tool, and was the first one here, but comm holds
+# its input to the order plain `sort` would give it while both lists are
+# sorted case folded. An organization spelled with a capital then sits where
+# comm does not expect it: GNU comm calls the input unsorted and exits 1, and
+# under err_exit that ended the whole run on the Forgejo runner -- where the
+# Mac's comm had only shrugged and carried on. A set lookup needs no sorted
+# input at all.
+orgs_without_config() {
+  local -A has
+  local org
+  for org in ${(f)"$(cut -f1 $2)"}; do
+    has[${org:l}]=1
+  done
+  for org in ${(f)"$(<$1)"}; do
+    (( ${+has[${org:l}]} )) || print -r -- $org
+  done
 }
 
 if [[ ${1:-} == --probe-one ]]; then
@@ -114,8 +147,7 @@ xargs -n 1 -P $jobs $SELF --probe-one < $tmp/candidates | sort -f > $tmp/found
 # Second pass, for organizations the report could offer no candidate for: ask
 # about each candidate name directly. A name the organization does not have
 # 404s, which costs one call and says so.
-cut -f1 $tmp/found | sort -uf > $tmp/found-orgs
-gaps=(${(f)"$(comm -23 $tmp/orgs $tmp/found-orgs)"})
+gaps=(${(f)"$(orgs_without_config $tmp/orgs $tmp/found)"})
 if (( $#gaps )); then
   print -ru2 -- "Probing ${(j:, :)CANDIDATE_REPOS} directly in ${#gaps} organizations the reports name no candidate in."
   print -rl -- ${^gaps}/${^CANDIDATE_REPOS} > $tmp/direct
@@ -139,7 +171,7 @@ mkdir -p ${out:h}
 mv -f -- $out.$$.tmp $out
 
 cut -f1 $tmp/found | sort -uf > $tmp/found-orgs
-missing=(${(f)"$(comm -23 $tmp/orgs $tmp/found-orgs)"})
+missing=(${(f)"$(orgs_without_config $tmp/orgs $tmp/found)"})
 print -ru2 -- "$(grep -c . $tmp/found) configs in $(grep -c . $tmp/found-orgs) of $(grep -c . $tmp/orgs) organizations -> $out"
 if (( $#missing )); then
   print -ru2 -- "No config found in ${#missing} organizations, which declare nothing:"

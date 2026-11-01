@@ -114,6 +114,14 @@ pub struct OrgSnapshot {
     pub teams_readable: bool,
 }
 
+/// What an enterprise listing yielded: the organizations it named, and how
+/// many it would not, because an organization that forbids classic personal
+/// access tokens comes back as a null with no login in it.
+pub struct EnterpriseOrgs {
+    pub logins: Vec<String>,
+    pub unreadable: usize,
+}
+
 pub struct Collector<'a> {
     client: &'a GithubClient,
     membership: &'static str,
@@ -294,10 +302,12 @@ impl<'a> Collector<'a> {
         Ok(data.viewer.login)
     }
 
-    /// All organizations in an enterprise, ordered by login.
-    pub async fn enterprise_orgs(&self, slug: &str) -> Result<Vec<String>> {
+    /// All organizations in an enterprise, ordered by login, with a count of
+    /// the ones the credential may not read -- see `EnterpriseOrgs`.
+    pub async fn enterprise_orgs(&self, slug: &str) -> Result<EnterpriseOrgs> {
         let mut cursor: Option<String> = None;
         let mut out = Vec::new();
+        let mut unreadable = 0usize;
 
         loop {
             let data: EnterpriseOrgsData = self
@@ -313,14 +323,14 @@ impl<'a> Collector<'a> {
                 format!("no enterprise named `{slug}` is visible to this token")
             })?;
 
-            out.extend(
-                enterprise
-                    .organizations
-                    .nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|n| n.login),
-            );
+            // A null node is an organization this credential may not read,
+            // and the response never says which one. See EnterpriseOrgs.
+            for node in enterprise.organizations.nodes {
+                match node {
+                    Some(node) => out.push(node.login),
+                    None => unreadable += 1,
+                }
+            }
 
             let page = enterprise.organizations.page_info;
             if !page.has_next_page {
@@ -332,7 +342,10 @@ impl<'a> Collector<'a> {
             }
         }
 
-        Ok(out)
+        Ok(EnterpriseOrgs {
+            logins: out,
+            unreadable,
+        })
     }
 
     /// Everyone on the enterprise's people list, whether or not they belong to
@@ -456,7 +469,8 @@ impl<'a> Collector<'a> {
         loop {
             let data: OrgMembersData = self
                 .client
-                .query(
+                .query_as(
+                    Some(login),
                     &self.query_text(ORG_MEMBERS),
                     json!({ "login": login, "cursor": cursor, "batchSize": self.batch_size }),
                 )
@@ -495,7 +509,8 @@ impl<'a> Collector<'a> {
         loop {
             let data: OrgTeamsData = self
                 .client
-                .query(
+                .query_as(
+                    Some(login),
                     &self.query_text(ORG_TEAMS),
                     json!({
                         "login": login,
@@ -530,7 +545,8 @@ impl<'a> Collector<'a> {
                     let Some(next) = page.end_cursor else { break };
                     let data: TeamMembersData = self
                         .client
-                        .query(
+                        .query_as(
+                            Some(login),
                             &self.query_text(TEAM_MEMBERS),
                             json!({
                                 "login": login,
